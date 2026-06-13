@@ -17,6 +17,20 @@ WaqfApp redefines Islamic modern endowments by merging financial asset tracking 
 
 ---
 
+## 📍 Quick Navigation
+
+* [🌐 Platform Overview](#-platform-overview)
+* [📦 System Architecture](#-system-architecture)
+* [✨ Key Features](#-key-features)
+* [📁 Repository Structure](#-repository-structure-and-module-index)
+* [🛠️ Tech Stack](#️-tech-stack)
+* [💻 System Requirements](#-system-requirements)
+* [🚀 Operational Setup & Execution Guide](#-operational-setup--execution-guide)
+* [🏗️ Architectural Highlights](#%EF%B8%8F-architectural-highlights)
+* [📋 Module Operational Reference](#-module-operational-reference)
+
+---
+
 ## 📦 System Architecture
 
 ```text
