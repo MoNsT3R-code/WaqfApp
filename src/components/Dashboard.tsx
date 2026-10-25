@@ -52,7 +52,6 @@ import {
 import { Logo } from "./Logo";
 import { motion, AnimatePresence } from "motion/react";
 import { formatCurrency, cn } from "../lib/utils";
-import { GoogleGenAI } from "@google/genai";
 import { translations, Language } from "../translations";
 import { Theme } from "../App";
 
@@ -92,12 +91,13 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
   const [marketplace, setMarketplace] = useState<MarketplaceData | null>(null);
   const [adminAccounts, setAdminAccounts] = useState<any[]>([]);
   const [smartInsight, setSmartInsight] = useState<string | null>(null);
+  const [insightSource, setInsightSource] = useState<string | null>(null);
   const [isAdvisorLoading, setIsAdvisorLoading] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
   
   // Support Assistant State
   const [chatInput, setChatInput] = useState("");
-  const [messages, setMessages] = useState<{ role: "user" | "ai"; content: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "ai"; content: string; sources?: { question: string; section: string }[] }[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   
   // E2EE State
@@ -112,6 +112,15 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
   const [travelTab, setTravelTab] = useState<TravelTab>("Hotels");
   const [foodCity, setFoodCity] = useState<string>("All");
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Service form fields (Send Money, Bills, Mobile Load, Add Cash)
+  const [form, setForm] = useState<Record<string, string>>({});
+  useEffect(() => { setForm({}); }, [activeModal]);
+  const bindField = (name: string, options?: string[]) => ({
+    value: form[name] ?? options?.[0] ?? "",
+    onChange: (value: string) => setForm(f => ({ ...f, [name]: value })),
+  });
+  const fieldValue = (name: string, options?: string[]) => (form[name] ?? options?.[0] ?? "").trim();
 
   // Cart & Feedback State
   const [cart, setCart] = useState<any[]>([]);
@@ -223,6 +232,11 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     } catch (e) {}
   };
 
+  const checkoutCart = async () => {
+    await handleAction("/api/cart/checkout", {});
+    fetchCart();
+  };
+
   const startEditingFeedback = (f: any) => {
     setNewFeedback({ content: f.content, rating: f.rating });
     setEditingFeedbackId(f.id);
@@ -310,28 +324,18 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     setIsChatLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        config: {
-          systemInstruction: `You are the WaqfApp Assistant. WaqfApp is a secure, Islamic-focused digital wallet and philanthropy engine. 
-          It supports:
-          - Transfers/Payments
-          - Bill Payments
-          - Charity/Waqf (Sadaqah Jariyah)
-          - Travel bookings (Hotels, Flights)
-          - Digital Vault (E2EE)
-          - Smart Advisor for finance
-          Answer queries politely in ${lang}. Be helpful and concise. Use a friendly but professional tone. If you don't know something about the app, guide the user to the Help Center.`,
+      // RAG agent on the server (LangGraph over the FAQ); no API key in the browser
+      const res = await fetch("/api/agent/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("waqf_token")}`
         },
-        contents: [
-          ...messages.map(m => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.content }] })),
-          { role: "user", parts: [{ text: userMsg }] }
-        ],
+        body: JSON.stringify({ message: userMsg, history: messages.map(m => ({ role: m.role, content: m.content })), lang })
       });
-
-      const aiText = response.text || "I am currently processing your request. Please try again in a moment.";
-      setMessages(prev => [...prev, { role: "ai", content: aiText }]);
+      if (!res.ok) throw new Error(`Assistant returned ${res.status}`);
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: "ai", content: data.answer, sources: data.sources }]);
     } catch (error) {
       console.error("Support API failed:", error);
       setMessages(prev => [...prev, { role: "ai", content: "Apologies, my knowledge bank is currently synchronizing. Please ask again shortly." }]);
@@ -365,20 +369,23 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     setIsAdvisorLoading(true);
     setFeedbackGiven(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `Act as a professional financial advisor in Pakistan. Analyze this user data in PKR:
-        Total Balance: ${formatCurrency(summary.totalBalance)}
-        Recent Activity: ${transactions.slice(0, 5).map(t => `${t.merchant}: ${t.amount}`).join(", ")}
-        Based on this, suggest one specific action to optimize their WaqfApp wallet experience (e.g. paying bills earlier, using ReadyCash wisely, or top-up strategies). 2 sentences max.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt
+      // Advisor graph on the server analyses this account's own ledger
+      const res = await fetch("/api/agent/advisor", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("waqf_token")}`
+        },
+        body: JSON.stringify({ lang })
       });
-      setSmartInsight(response.text);
+      if (!res.ok) throw new Error(`Advisor returned ${res.status}`);
+      const data = await res.json();
+      setSmartInsight(data.insight);
+      setInsightSource(data.source?.question || null);
     } catch (error) {
       console.error("Advisor Error:", error);
       setSmartInsight("Optimize your liquidity by consolidating your utility payments during the first week of the month.");
+      setInsightSource(null);
     } finally {
       setIsAdvisorLoading(false);
     }
@@ -403,6 +410,8 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
         setActiveModal(null);
         await fetchData();
         showNotification("Operation completed successfully");
+      } else {
+        showNotification("Request could not be completed", "error");
       }
     } catch (err) {
       console.error("Action Error:", err);
@@ -410,6 +419,16 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // Validates the service form, then submits it; `required` fields must be non-empty
+  const submitForm = (endpoint: string, required: string[], build: (amount: number) => any) => {
+    const amount = parseFloat(form.amount);
+    if (required.some(name => !fieldValue(name)) || !(amount > 0)) {
+      showNotification("Please fill in every field with a valid amount", "error");
+      return;
+    }
+    handleAction(endpoint, build(amount));
   };
 
   if (!summary) return null;
@@ -782,6 +801,9 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                       ) : (
                         <p className="text-[11px] text-[var(--text-s)] leading-relaxed italic">
                           {smartInsight ? `"${smartInsight}"` : "Advisor report pending. Synchronize to view latest data analysis."}
+                          {smartInsight && insightSource && (
+                            <span className="block mt-2 not-italic text-[9px] uppercase tracking-widest text-[var(--accent)]/80">{labels.fromFaq}: {insightSource}</span>
+                          )}
                         </p>
                       )}
                     </div>
@@ -971,7 +993,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                              <span className="text-[var(--text-s)] uppercase tracking-widest font-bold">Total Portfolio Value</span>
                              <span className="text-[var(--text-p)] font-bold">{formatCurrency(cart.reduce((s, i) => s + (i.price * (i.quantity || 1)), 0))}</span>
                            </div>
-                           <button className="w-full py-4 bg-[var(--accent)] text-[var(--bg)] text-[10px] font-bold uppercase tracking-[0.4em] rounded-2xl shadow-[0_10px_30px_var(--accent-glow)]">
+                           <button onClick={checkoutCart} disabled={isProcessing} className="w-full py-4 bg-[var(--accent)] text-[var(--bg)] text-[10px] font-bold uppercase tracking-[0.4em] rounded-2xl shadow-[0_10px_30px_var(--accent-glow)]">
                              Initialize Settlement
                            </button>
                         </div>
@@ -1134,12 +1156,20 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                       )}
                       {messages.map((m, i) => (
                         <div key={i} className={cn(
-                          "max-w-[85%] p-4 rounded-3xl text-sm leading-relaxed",
+                          "max-w-[85%] p-4 rounded-3xl text-sm leading-relaxed whitespace-pre-line",
                           m.role === "user" 
                             ? "bg-[var(--accent)]/10 border border-[var(--accent)]/20 self-end rounded-tr-none text-[var(--text-p)]" 
                             : "bg-[var(--card)] border border-[var(--border)] self-start rounded-tl-none text-[var(--text-s)]"
                         )}>
                           {m.content}
+                          {m.sources && m.sources.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1 whitespace-normal">
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--accent)]">{labels.sources}</p>
+                              {m.sources.map(s => (
+                                <p key={s.question} className="text-[10px] opacity-70">{s.question} · {s.section}</p>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                       {isChatLoading && (
@@ -1363,7 +1393,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                               <span className="flex items-center gap-1"><Utensils className="w-3 h-3" /> Min. {rest.minOrder}</span>
                             </div>
                             <button 
-                              onClick={() => handleAction("/api/food/order", { restaurantName: rest.name, amount: 1500 })}
+                              onClick={() => handleAction("/api/food/order", { restaurantName: rest.name, amount: Math.max(1500, rest.minOrder) })}
                               className="w-full mt-4 py-2 bg-[var(--card)] text-[var(--accent)] border border-[var(--accent)]/20 text-[9px] font-bold uppercase tracking-widest rounded-xl hover:bg-[var(--accent)] hover:text-[var(--bg)] transition-all"
                             >
                               Order Now
@@ -1376,28 +1406,28 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                 )}
                 {activeModal === "transfer" && (
                   <>
-                    <InputGroup label="Recipient Account / Number" type="text" placeholder="e.g. 03450000000" />
-                    <InputGroup label="Select Destination" dropdown={["JazzCash", "Easypaisa", "Bank Account (IBFT)"]} />
-                    <InputGroup label="Amount (PKR)" type="number" placeholder="5,000" />
-                    <SubmitButton label="Confirm Transfer" onClick={() => handleAction("/api/transactions/transfer", { amount: 5000, to: "0345..." })} loading={isProcessing} />
+                    <InputGroup label="Recipient Account / Number" type="text" placeholder="e.g. 03450000000" {...bindField("recipient")} />
+                    <InputGroup label="Select Destination" dropdown={TRANSFER_DESTINATIONS} {...bindField("destination", TRANSFER_DESTINATIONS)} />
+                    <InputGroup label="Amount (PKR)" type="number" placeholder="5,000" {...bindField("amount")} />
+                    <SubmitButton label="Confirm Transfer" onClick={() => submitForm("/api/transactions/transfer", ["recipient"], amount => ({ amount, to: `${fieldValue("recipient")} (${fieldValue("destination", TRANSFER_DESTINATIONS)})` }))} loading={isProcessing} />
                   </>
                 )}
 
                 {activeModal === "bill" && (
                   <>
-                    <InputGroup label="Service Provider" dropdown={["KESC / Electric", "SNGPL / Gas", "WASA / Water", "PTCL / Internet"]} />
-                    <InputGroup label="Consumer Number" type="text" placeholder="9PKR-8822-XX" />
-                    <InputGroup label="Amount (PKR)" type="number" placeholder="2,450" />
-                    <SubmitButton label="Pay Bill" onClick={() => handleAction("/api/bills/pay", { provider: "KESC", consumerId: "9PKR-8822", amount: 2450 })} loading={isProcessing} />
+                    <InputGroup label="Service Provider" dropdown={BILL_PROVIDERS} {...bindField("provider", BILL_PROVIDERS)} />
+                    <InputGroup label="Consumer Number" type="text" placeholder="9PKR-8822-XX" {...bindField("consumerId")} />
+                    <InputGroup label="Amount (PKR)" type="number" placeholder="2,450" {...bindField("amount")} />
+                    <SubmitButton label="Pay Bill" onClick={() => submitForm("/api/bills/pay", ["consumerId"], amount => ({ provider: fieldValue("provider", BILL_PROVIDERS).split(" / ")[0], consumerId: fieldValue("consumerId"), amount }))} loading={isProcessing} />
                   </>
                 )}
 
                 {activeModal === "load" && (
                   <>
-                    <InputGroup label="Network Operator" dropdown={["Jazz", "Telenor", "Zong", "Ufone"]} />
-                    <InputGroup label="Mobile Number" type="text" placeholder="03XXXXXXXXX" />
-                    <InputGroup label="Top-up Amount" type="number" placeholder="1,000" />
-                    <SubmitButton label="Purchase Bundle" onClick={() => handleAction("/api/mobile/load", { operator: "Jazz", mobileNumber: "0300...", amount: 1000 })} loading={isProcessing} />
+                    <InputGroup label="Network Operator" dropdown={MOBILE_OPERATORS} {...bindField("operator", MOBILE_OPERATORS)} />
+                    <InputGroup label="Mobile Number" type="text" placeholder="03XXXXXXXXX" {...bindField("mobileNumber")} />
+                    <InputGroup label="Top-up Amount" type="number" placeholder="1,000" {...bindField("amount")} />
+                    <SubmitButton label="Purchase Bundle" onClick={() => submitForm("/api/mobile/load", ["mobileNumber"], amount => ({ operator: fieldValue("operator", MOBILE_OPERATORS), mobileNumber: fieldValue("mobileNumber"), amount }))} loading={isProcessing} />
                   </>
                 )}
 
@@ -1429,10 +1459,14 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
 
                 {activeModal === "add_tx" && (
                   <>
-                     <InputGroup label="Descriptor" type="text" placeholder="e.g. Local Grocery" />
-                     <InputGroup label="Volume (PKR)" type="number" placeholder="5,000" />
-                     <InputGroup label="Classification" dropdown={["General", "Shopping", "Food", "Bills", "Income"]} />
-                     <SubmitButton label="Append to Ledger" onClick={() => handleAction("/api/transactions/add", { merchant: "Manual Entry", amount: -500, category: "General" })} loading={isProcessing} />
+                     <InputGroup label="Descriptor" type="text" placeholder="e.g. Local Grocery" {...bindField("merchant")} />
+                     <InputGroup label="Volume (PKR)" type="number" placeholder="5,000" {...bindField("amount")} />
+                     <InputGroup label="Classification" dropdown={LEDGER_CATEGORIES} {...bindField("category", LEDGER_CATEGORIES)} />
+                     <SubmitButton label="Append to Ledger" onClick={() => submitForm("/api/transactions/add", ["merchant"], amount => {
+                       const category = fieldValue("category", LEDGER_CATEGORIES);
+                       // Income adds to the balance; every other category is spending
+                       return { merchant: fieldValue("merchant"), amount: category === "Income" ? amount : -amount, category };
+                     })} loading={isProcessing} />
                   </>
                 )}
               </div>
@@ -1520,17 +1554,24 @@ const CategoryIcon = ({ category, amount }: { category: string; amount: number }
   return <Wallet className="w-5 h-5 text-[var(--text-s)]" />;
 };
 
-const InputGroup = ({ label, type, placeholder, dropdown }: { label: string; type?: string; placeholder?: string; dropdown?: string[] }) => (
+const TRANSFER_DESTINATIONS = ["JazzCash", "Easypaisa", "Bank Account (IBFT)"];
+const BILL_PROVIDERS = ["KESC / Electric", "SNGPL / Gas", "WASA / Water", "PTCL / Internet"];
+const MOBILE_OPERATORS = ["Jazz", "Telenor", "Zong", "Ufone"];
+const LEDGER_CATEGORIES = ["General", "Shopping", "Food", "Bills", "Income"];
+
+const InputGroup = ({ label, type, placeholder, dropdown, value, onChange }: { label: string; type?: string; placeholder?: string; dropdown?: string[]; value?: string; onChange?: (value: string) => void }) => (
   <div className="space-y-2">
     <label className="text-[9px] text-[var(--text-s)] uppercase tracking-[0.3em] ml-2 block">{label}</label>
     {dropdown ? (
-      <select className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-2xl px-5 py-4 text-xs font-medium text-[var(--text-p)] focus:border-[var(--accent)]/50 outline-none transition-all appearance-none cursor-pointer">
+      <select value={value} onChange={e => onChange?.(e.target.value)} className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-2xl px-5 py-4 text-xs font-medium text-[var(--text-p)] focus:border-[var(--accent)]/50 outline-none transition-all appearance-none cursor-pointer">
         {dropdown.map(opt => <option key={opt}>{opt}</option>)}
       </select>
     ) : (
       <input 
         type={type} 
         placeholder={placeholder}
+        value={value}
+        onChange={e => onChange?.(e.target.value)}
         className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-2xl px-5 py-4 text-xs font-medium text-[var(--text-p)] focus:border-[var(--accent)]/50 outline-none transition-all placeholder:text-[var(--text-s)]/30"
       />
     )}

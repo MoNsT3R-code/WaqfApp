@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import session from "express-session";
 import cookieParser from "cookie-parser";
+import { createAgents, type ChatTurn } from "./server/agent/index.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,28 +33,33 @@ async function startServer() {
   }));
 
   // Mock Database
-  const users = [
-    {
-      id: "1",
-      email: "demo@waqf.com",
-      username: "waqf_user",
-      phone: "+923000000000",
-      password: await bcrypt.hash("password123", 10),
-      name: "Waqf Demo User",
-      balance: 1250500.00,
-      currency: "PKR",
-      isVerified: true,
-      twoFactorEnabled: false,
-      twoFactorSecret: "123456",
-      role: "user"
-    }
-  ];
+  const demoUserTemplate = {
+    id: "1",
+    email: "demo@waqf.com",
+    username: "waqf_user",
+    phone: "+923000000000",
+    password: await bcrypt.hash("password123", 10),
+    name: "Waqf Demo User",
+    balance: 1250500.00,
+    currency: "PKR",
+    isVerified: true,
+    twoFactorEnabled: false,
+    twoFactorSecret: "123456",
+    role: "user"
+  };
+
+  const users = [{ ...demoUserTemplate }];
 
   // --- API Routes ---
 
   // Auth: Guest session (login/register panel removed; app opens straight to the dashboard)
   app.post("/api/auth/guest", (req, res) => {
-    const user = users.find(u => u.id === "1")!;
+    let user = users.find(u => u.id === demoUserTemplate.id);
+    if (!user) {
+      // The demo account was deleted; recreate it so the app can still open
+      user = { ...demoUserTemplate };
+      users.push(user);
+    }
     const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "24h" });
     const { password: _, ...userWithoutPassword } = user;
     res.json({ token, user: userWithoutPassword });
@@ -241,6 +247,40 @@ async function startServer() {
     res.json({ message: "Booking confirmed", transaction: newTransaction });
   });
 
+  // Simulation: Flight Booking
+  app.post("/api/bookings/flight", authenticateToken, (req: any, res) => {
+    if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
+    const { flightDetails, amount } = req.body;
+    const newTransaction = {
+      id: Math.random().toString(36).substr(2, 9),
+      userId: req.user.userId,
+      amount: -parseFloat(amount),
+      merchant: `Flight ${flightDetails}`,
+      category: "Travel",
+      date: new Date().toISOString()
+    };
+    transactions.unshift(newTransaction);
+    res.json({ message: "Flight booked", transaction: newTransaction });
+  });
+
+  // Simulation: Settle every item in the portfolio (cart) and empty it
+  app.post("/api/cart/checkout", authenticateToken, (req: any, res) => {
+    if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
+    const items = carts[req.user.userId] || [];
+    if (items.length === 0) return res.status(400).json({ message: "Portfolio is empty" });
+    const newTransactions = items.map(item => ({
+      id: Math.random().toString(36).substr(2, 9),
+      userId: req.user.userId,
+      amount: -(item.price * (item.quantity || 1)),
+      merchant: item.type === "Hotel" ? `Stay at ${item.name}` : `Flight ${item.route}`,
+      category: "Travel",
+      date: new Date().toISOString()
+    }));
+    transactions.unshift(...newTransactions);
+    carts[req.user.userId] = [];
+    res.json({ message: "Portfolio settled", transactions: newTransactions });
+  });
+
   // Simulation: Food Order
   app.post("/api/food/order", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
@@ -312,6 +352,22 @@ async function startServer() {
     res.json({ message: "Transaction added successfully", transaction: newTransaction });
   });
 
+  // Simulation: Send Money
+  app.post("/api/transactions/transfer", authenticateToken, (req: any, res) => {
+    if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
+    const { amount, to } = req.body;
+    const newTransaction = {
+      id: Math.random().toString(36).substr(2, 9),
+      userId: req.user.userId,
+      amount: -parseFloat(amount),
+      merchant: `Transfer to ${to}`,
+      category: "Transfer",
+      date: new Date().toISOString()
+    };
+    transactions.unshift(newTransaction);
+    res.json({ message: "Transfer successful", transaction: newTransaction });
+  });
+
   // Simulation: Utility Bill Payment
   app.post("/api/bills/pay", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
@@ -364,6 +420,45 @@ async function startServer() {
   app.get("/api/admin/accounts", authenticateToken, (req: any, res) => {
     if (req.user.role !== "admin") return res.status(403).json({ message: "Access denied" });
     res.json(users.map(u => ({ email: u.email, username: u.username, role: u.role, id: u.id })));
+  });
+
+  // --- RAG Agents (LangChain + LangGraph over docs/faq, no API key) ---
+  const agents = createAgents(__dirname);
+
+  app.get("/api/agent/status", (req, res) => {
+    res.json(agents.status());
+  });
+
+  // Help Center assistant
+  app.post("/api/agent/chat", authenticateToken, async (req: any, res) => {
+    const { message, history, lang } = req.body;
+    if (typeof message !== "string" || !message.trim() || message.length > 500) {
+      return res.status(400).json({ message: "Question must be between 1 and 500 characters" });
+    }
+    const turns: ChatTurn[] = (Array.isArray(history) ? history : [])
+      .filter((t: any) => (t?.role === "user" || t?.role === "ai") && typeof t.content === "string")
+      .slice(-10)
+      .map((t: any) => ({ role: t.role, content: t.content.slice(0, 2000) }));
+    try {
+      res.json(await agents.chat(message.trim(), turns, typeof lang === "string" ? lang : "en"));
+    } catch (e: any) {
+      console.error("[Agent] Chat failed:", e);
+      res.status(500).json({ message: "Assistant unavailable" });
+    }
+  });
+
+  // Money Helper: analyses the signed-in user's own ledger on the server
+  app.post("/api/agent/advisor", authenticateToken, async (req: any, res) => {
+    const user = users.find(u => u.id === req.user.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const userTransactions = transactions.filter(t => t.userId === user.id);
+    const balance = user.balance + userTransactions.reduce((acc, t) => acc + t.amount, 0);
+    try {
+      res.json(await agents.advise(userTransactions, balance, typeof req.body?.lang === "string" ? req.body.lang : "en"));
+    } catch (e: any) {
+      console.error("[Agent] Advisor failed:", e);
+      res.status(500).json({ message: "Advisor unavailable" });
+    }
   });
 
   // --- Vite / Static Handling ---
