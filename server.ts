@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   const JWT_SECRET = process.env.JWT_SECRET || "waqf_super_secret_key_123";
 
   app.use(express.json());
@@ -32,24 +32,7 @@ async function startServer() {
   }));
 
   // Mock Database
-  const ADMIN_EMAIL = "m.sehar2004@gmail.com";
-  const ADMIN_PASS_RAW = "mm.mmm123M^";
-
   const users = [
-    {
-      id: "admin-1",
-      email: ADMIN_EMAIL,
-      username: "application_owner",
-      phone: "+92", // Generic admin phone
-      password: await bcrypt.hash(ADMIN_PASS_RAW, 10),
-      name: "Application Owner",
-      balance: 0,
-      currency: "PKR",
-      isVerified: true,
-      twoFactorEnabled: true,
-      twoFactorSecret: "123456",
-      role: "admin"
-    },
     {
       id: "1",
       email: "demo@waqf.com",
@@ -66,92 +49,14 @@ async function startServer() {
     }
   ];
 
-  const pendingVerifications: Record<string, string> = {};
-
   // --- API Routes ---
 
-  // Auth: Register
-  app.post("/api/auth/register", async (req, res) => {
-    const { email, phone, username, password } = req.body;
-    
-    // Check if user exists
-    if (users.find(u => u.email === email || u.username === username)) {
-      return res.status(400).json({ message: "Identity already exists in system" });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    const newUser = {
-      id: (users.length + 1).toString(),
-      email,
-      phone,
-      username,
-      password: hashedPassword,
-      name: username,
-      balance: 50000.00, // Starting balance
-      currency: "PKR",
-      isVerified: false,
-      twoFactorEnabled: false,
-      twoFactorSecret: "123456", // Default secret for all users
-      role: "user"
-    };
-
-    users.push(newUser);
-    pendingVerifications[email] = verificationCode;
-    
-    console.log(`[AUTH] Verification code for ${email}: ${verificationCode}`);
-    res.json({ message: "Registration successful. Verification code sent to your Gmail/Phone.", email });
-  });
-
-  // Auth: Verify
-  app.post("/api/auth/verify", (req, res) => {
-    const { email, code } = req.body;
-    if (pendingVerifications[email] === code) {
-      const user = users.find(u => u.email === email);
-      if (user) user.isVerified = true;
-      delete pendingVerifications[email];
-      res.json({ message: "Account verified successfully" });
-    } else {
-      res.status(400).json({ message: "Invalid verification code" });
-    }
-  });
-
-  // Auth: Login
-  app.post("/api/auth/login", async (req, res) => {
-    const { identity, password } = req.body; 
-    const user = users.find(u => u.email === identity || u.username === identity);
-    
-    if (user && await bcrypt.compare(password, user.password)) {
-      if (!user.isVerified) {
-        return res.status(403).json({ message: "Account pending verification", status: "unverified", email: user.email });
-      }
-
-      // Force 2FA for admin
-      if (user.role === "admin" || user.twoFactorEnabled) {
-        return res.json({ status: "2fa_required", userId: user.id });
-      }
-
-      const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "24h" });
-      const { password: _, ...userWithoutPassword } = user;
-      res.json({ token, user: userWithoutPassword });
-    } else {
-      res.status(401).json({ message: "Access denied. Invalid credentials." });
-    }
-  });
-
-  // Auth: Verify 2FA
-  app.post("/api/auth/2fa/verify", (req, res) => {
-    const { userId, code } = req.body;
-    const user = users.find(u => u.id === userId);
-    
-    if (user && user.twoFactorSecret === code) {
-      const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "24h" });
-      const { password: _, ...userWithoutPassword } = user;
-      res.json({ token, user: userWithoutPassword });
-    } else {
-      res.status(401).json({ message: "Invalid 2FA code" });
-    }
+  // Auth: Guest session (login/register panel removed; app opens straight to the dashboard)
+  app.post("/api/auth/guest", (req, res) => {
+    const user = users.find(u => u.id === "1")!;
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "24h" });
+    const { password: _, ...userWithoutPassword } = user;
+    res.json({ token, user: userWithoutPassword });
   });
 
   // Middleware: Auth Check
@@ -278,135 +183,6 @@ async function startServer() {
       carts[userId] = carts[userId].filter(item => item.cartId !== cartId);
     }
     res.json(carts[userId] || []);
-  });
-
-  // Google OAuth Roots (Gmail Connection/Login)
-  app.get("/api/auth/google/url", (req, res) => {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const protocol = req.headers["x-forwarded-proto"] || "http";
-    const host = req.headers.host;
-    const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
-    const redirectUri = `${baseUrl}/api/auth/google/callback`;
-
-    console.log(`[OAUTH] Initiating flow. Redirect URI: ${redirectUri}`);
-
-    if (!clientId || clientId === "REPLACE_WITH_CLIENT_ID") {
-      return res.status(400).json({ 
-        message: "Google OAuth is not configured. Please set GOOGLE_CLIENT_ID in .env",
-        docs: "https://console.cloud.google.com/apis/credentials"
-      });
-    }
-    
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
-      access_type: "offline",
-      prompt: "consent"
-    });
-    
-    res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
-  });
-
-  app.get(["/api/auth/google/callback", "/api/auth/google/callback/"], async (req, res) => {
-    const { code } = req.query;
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const protocol = req.headers["x-forwarded-proto"] || "http";
-    const host = req.headers.host;
-    const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
-    const redirectUri = `${baseUrl}/api/auth/google/callback`;
-
-    if (!code) return res.status(400).send("No authorization code provided");
-
-    try {
-      // 1. Exchange code for tokens
-      const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          code: code as string,
-          client_id: clientId!,
-          client_secret: clientSecret!,
-          redirect_uri: redirectUri,
-          grant_type: "authorization_code",
-        }),
-      });
-
-      const tokens = await tokenResponse.json();
-      if (!tokens.access_token) throw new Error("Failed to retrieve access token");
-
-      // 2. Get user info
-      const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
-      });
-      const googleUser = await userResponse.json();
-
-      // 3. Find or Create User
-      let user = users.find(u => u.email === googleUser.email);
-      const isAdmin = googleUser.email === ADMIN_EMAIL;
-
-      if (!user) {
-        user = {
-          id: (users.length + 1).toString(),
-          email: googleUser.email,
-          username: googleUser.name.replace(/\s+/g, "_").toLowerCase(),
-          phone: "+92",
-          password: await bcrypt.hash(Math.random().toString(36), 10), // Random password for OAuth users
-          name: googleUser.name,
-          balance: 0,
-          currency: "PKR",
-          isVerified: true,
-          twoFactorEnabled: isAdmin, // Enable 2FA by default for admin
-          twoFactorSecret: "123456",
-          role: isAdmin ? "admin" : "user"
-        };
-        users.push(user);
-      } else {
-        // Update existing user with Google info
-        user.name = googleUser.name;
-        user.isVerified = true;
-        if (isAdmin) user.role = "admin";
-      }
-
-      // 4. Generate Session Token
-      const sessionToken = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role },
-        JWT_SECRET,
-        { expiresIn: "24h" }
-      );
-
-      const { password: _, ...userWithoutPassword } = user;
-
-      // 5. Return success script
-      res.send(`
-        <html>
-          <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0a0a0a; color: white;">
-            <script>
-              if (window.opener) {
-                window.opener.postMessage({ 
-                  type: 'GMAIL_AUTH_SUCCESS', 
-                  email: '${user.email}',
-                  token: '${sessionToken}',
-                  user: ${JSON.stringify(userWithoutPassword)}
-                }, '*');
-                window.close();
-              } else {
-                window.location.href = '/';
-              }
-            </script>
-            <div style="text-align: center;">
-              <h2 style="color: #4ADE80;">Identity Synchronized</h2>
-              <p>Welcome, ${user.name}. You may now proceed.</p>
-            </div>
-          </body>
-        </html>
-      `);
-    } catch (error: any) {
-      console.error("[OAUTH] Error:", error);
-      res.status(500).send("OAuth synchronization failed: " + error.message);
-    }
   });
 
   // Marketplace

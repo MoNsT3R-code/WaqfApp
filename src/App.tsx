@@ -6,7 +6,6 @@
 import { useState, useEffect } from "react";
 import { Dashboard } from "./components/Dashboard";
 import { ThreeBackground } from "./components/ThreeBackground";
-import { Auth } from "./components/Auth";
 import { Language } from "./translations";
 
 export type Theme = "light" | "dark" | "system";
@@ -28,24 +27,29 @@ export default function App() {
     localStorage.setItem("waqf_theme", theme);
   }, [theme]);
 
-  const handleLogin = (data: any) => {
+  const startSession = async () => {
+    const res = await fetch("/api/auth/guest", { method: "POST" });
+    const data = await res.json();
     localStorage.setItem("waqf_token", data.token);
     setUser(data.user);
   };
 
+  useEffect(() => {
+    startSession();
+  }, []);
+
   const handleLogout = () => {
     localStorage.removeItem("waqf_token");
     setUser(null);
+    startSession();
   };
 
   return (
     <div className={`relative overflow-x-hidden selection:bg-[var(--accent)]/30 selection:text-[var(--text-p)] ${lang === "ur" || lang === "ar" ? "rtl" : "ltr"}`} dir={lang === "ur" || lang === "ar" ? "rtl" : "ltr"}>
       <ThreeBackground theme={theme} />
       <div className="relative z-10 transition-all duration-1000">
-        {user ? (
+        {user && (
           <Dashboard onLogout={handleLogout} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} user={user} />
-        ) : (
-          <Auth onLogin={handleLogin} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} />
         )}
       </div>
     </div>
