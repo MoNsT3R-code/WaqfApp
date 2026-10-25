@@ -27,6 +27,7 @@ WaqfApp redefines Islamic modern endowments by merging financial asset tracking 
 * [💻 System Requirements](#-system-requirements)
 * [🚀 Operational Setup & Execution Guide](#-operational-setup--execution-guide)
 * [🏗️ Architectural Highlights](#%EF%B8%8F-architectural-highlights)
+* [🤖 RAG Agent and FAQ](#-rag-agent-and-faq)
 * [📋 Module Operational Reference](#-module-operational-reference)
 
 ---
@@ -44,9 +45,9 @@ WaqfApp redefines Islamic modern endowments by merging financial asset tracking 
 ┌─────────────────────────────────────────────────────────────┐
 │                 ENTERPRISE PROCESSING BACKEND               │
 ├────────────┬─────────────┬────────────┬─────────────┬───────┤
-│  Smart     │   E2EE      │  Quantum   │   MFA /     │Gemini │
-│  Advisor   │Secret Vault │Marketplace │Session Tunnel│  API │
-│(PKR Engine)│ (Bcrypt/JWT)│(PKR/SAR Ops)│ (0.0.0.0)   │(LLM) │
+│  Smart     │   E2EE      │  Quantum   │   MFA /     │  RAG  │
+│  Advisor   │Secret Vault │Marketplace │Session Tunnel│ Agent │
+│(PKR Engine)│ (Bcrypt/JWT)│(PKR/SAR Ops)│ (0.0.0.0)   │(Graph)│
 └────────────┴─────────────┴────────────┴─────────────┴───────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -106,7 +107,7 @@ src/server/index.js - High-throughput Express.js bootstrap file anchoring networ
 | **Server Framework** | Express.js (Asynchronous REST API Router) | [expressjs.com](https://expressjs.com/) |
 | **Data Hashing & Security** | Bcrypt (Password Salt-and-Pepper Hashing) | [npmjs.com/package/bcrypt](https://www.npmjs.com/package/bcrypt) |
 | **Session Authentication** | JSON Web Tokens (JWT Cryptographic Tokens) | [jwt.io](https://jwt.io/) |
-| **AI Insights Engine** | Google Gemini API (Pattern Analysis) | [ai.google.dev](https://ai.google.dev/) |
+| **AI Assistant & Advisor** | LangChain + LangGraph RAG agent (local embeddings, no API key) | [langchain.com/langgraph](https://www.langchain.com/langgraph) |
 
 </div>
 
@@ -131,7 +132,7 @@ Navigate into your system root directory and establish the mandatory underlying 
 cd waqfapp-foundation/
 cp .env.example .env
 ```
-⚠️ CRITICAL SECURITY NOTE: Ensure GEMINI_API_KEY (used for advisor logic validation cascades) is properly instantiated within your active environment before server initialization.
+No API keys are required. Every setting in `.env` is optional; see `.env.example` for the list.
 
 ### Step 2: Install Base Dependencies
 Fetch system node assets using your preferred dependency execution manager:
@@ -154,6 +155,16 @@ Session boundaries utilize asymmetric cryptographic signatures. Active sessions 
 
 ## ⚡ Accelerated Canvas Context
 Dynamic user interaction tracking switches frame cycles dynamically, preserving system memory overheads when rendering transaction histories or micro-service listings.
+
+## 🤖 RAG Agent and FAQ
+The Help Center assistant and the Money Helper are LangGraph agents that run on the server (`server/agent/`) and answer from the FAQ knowledge base in `docs/faq/*.md`, without any external AI API.
+
+* **Support graph:** `contextualize → retrieve → grade → generate | fallback`. Retrieval is hybrid: local multilingual embeddings (`Xenova/paraphrase-multilingual-MiniLM-L12-v2`, downloaded once to `~/.cache/waqfapp/models`) plus BM25 keyword matching. Answers quote the FAQ and list their sources.
+* **Advisor graph:** `analyze → retrieve → advise`, grounded in the signed-in account's own ledger.
+* **Optional local LLM:** set `OLLAMA_MODEL` (e.g. `llama3.2:3b`) to have a model running in [Ollama](https://ollama.com) write the answers, in the user's selected language.
+* **Endpoints:** `POST /api/agent/chat`, `POST /api/agent/advisor`, `GET /api/agent/status`.
+
+The full FAQ is also published as a PDF, [`docs/WaqfApp-FAQ.pdf`](docs/WaqfApp-FAQ.pdf). Rebuild it after editing the Markdown with `npm run faq:pdf` (needs Python 3 with `reportlab`).
 
 ## 📋 Module Operational Reference
 Diagnostic System Ping

@@ -8,10 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "faq:pdf": "python scripts/build_faq_pdf.py"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0",
+    "@huggingface/transformers": "^4.3.1",
+    "@langchain/core": "^1.3.0",
+    "@langchain/langgraph": "^1.5.2",
+    "@langchain/ollama": "^1.3.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
     "@tailwindcss/vite": "^4.1.14",
