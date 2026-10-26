@@ -55,7 +55,7 @@ export function LimitDecision({ data, t, onChanged, onClose }: {
   const hits: { question: string; section: string }[] = p.hits || [];
 
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence mode="popLayout" initial={false}>
       <motion.div key={pending.step + (pinOpen ? "-pin" : "")} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="space-y-5">
         {pending.step === "ask_user" && (
           <>
