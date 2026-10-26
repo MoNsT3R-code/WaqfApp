@@ -56,8 +56,17 @@ import { translations, Language } from "../translations";
 import { Theme } from "../App";
 import type { Flight, Hotel, Marketplace, Restaurant, TripDeal } from "../../shared/marketplace";
 import { FoodScreen, type Basket } from "./market/FoodScreen";
-import { TravelScreen, countLabel, type TravelTab } from "./market/TravelScreen";
-import { fill, formatDay, formatPkr, Stepper } from "./market/parts";
+import { TravelScreen, type TravelTab } from "./market/TravelScreen";
+import { Stepper } from "./market/parts";
+import { countLabel, fill, formatDay, formatPkr } from "./market/helpers";
+import { AnimatedPkr, MotionTabs, Ripple } from "./market/motionParts";
+import { api, requestId, type PlanDashboard } from "./plan/api";
+import { SavingsScreen } from "./plan/SavingsScreen";
+import { LimitDecision } from "./plan/LimitDecision";
+import { SecurityCenter } from "./plan/SecurityCenter";
+import { MoneyHistory } from "./plan/MoneyHistory";
+import { PinPad, type PinOutcome } from "./plan/PinPad";
+import { BudgetImpact } from "./plan/BudgetImpact";
 
 interface Transaction {
   id: string;
@@ -79,7 +88,7 @@ interface Summary {
 
 type MarketplaceData = Marketplace;
 
-type ModalType = "add_tx" | "transfer" | "bill" | "load" | "loan" | "qr" | "travel" | "food" | "vault" | "privacy" | "help" | "savings" | "cart" | "feedback_main" | null;
+type ModalType = "add_tx" | "transfer" | "bill" | "load" | "loan" | "qr" | "travel" | "food" | "vault" | "privacy" | "help" | "savings" | "cart" | "feedback_main" | "limit" | "security" | null;
 type CartItem = { cartId: string; type: "Hotel" | "Flight"; itemId: string; name: string; price: number; unit: "night" | "passenger"; quantity: number; checkIn?: string };
 
 // Ledger rows: the time today, "Yesterday" and the date before that
@@ -109,7 +118,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
   
   // Support Assistant State
   const [chatInput, setChatInput] = useState("");
-  const [messages, setMessages] = useState<{ role: "user" | "ai"; content: string; sources?: { question: string; section: string }[] }[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "ai"; content: string; sources?: { question: string; section: string }[]; escalation?: { url: string; label: string } | null }[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   
   // E2EE State
@@ -121,6 +130,11 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
   const [travelTab, setTravelTab] = useState<TravelTab>("Hotels");
   const [basket, setBasket] = useState<Basket>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [cartTab, setCartTab] = useState<"All" | "Hotel" | "Flight">("All");
+  const [planData, setPlanData] = useState<PlanDashboard | null>(null);
+  // A PIN-confirmed action waiting for the PIN (Send Money, Quick Loan)
+  const [pinRequest, setPinRequest] = useState<{ endpoint: string; data: any; what: string; success: string } | null>(null);
+  useEffect(() => { setPinRequest(null); }, [activeModal]);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Service form fields (Send Money, Bills, Mobile Load, Add Cash)
@@ -387,7 +401,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
       });
       if (!res.ok) throw new Error(`Assistant returned ${res.status}`);
       const data = await res.json();
-      setMessages(prev => [...prev, { role: "ai", content: data.answer, sources: data.sources }]);
+      setMessages(prev => [...prev, { role: "ai", content: data.answer, sources: data.sources, escalation: data.escalation }]);
     } catch (error) {
       console.error("Support API failed:", error);
       setMessages(prev => [...prev, { role: "ai", content: "Apologies, my knowledge bank is currently synchronizing. Please ask again shortly." }]);
@@ -409,6 +423,33 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     setSummary(summaryData);
     setTransactions(transData);
     setMarketplace(marketData);
+    fetchPlan();
+  };
+
+  const fetchPlan = async () => {
+    const res = await api<PlanDashboard>("GET", "/api/plan");
+    if (res.ok) setPlanData(res.body);
+  };
+
+  // After a payment: show the budget warning, and open the limit decision when it starts
+  const handleBudget = (budget: any) => {
+    if (!budget) return;
+    if (budget.notice) setTimeout(() => showNotification(budget.notice, budget.level >= 90 ? "error" : "success"), 900);
+    if (budget.pending) setTimeout(() => setActiveModal("limit"), 400);
+  };
+
+  // A PIN-confirmed request; wrong PINs stay in the pad, success closes the modal
+  const submitWithPin = async (pin: string): Promise<PinOutcome> => {
+    if (!pinRequest) return { ok: false, message: "" };
+    const res = await api(pinRequest.endpoint === "" ? "GET" : "POST", pinRequest.endpoint, { ...pinRequest.data, pin, requestId: requestId() });
+    if (!res.ok) return { ok: false, message: res.body.message || "", locked: res.body.pinError === "locked" };
+    const success = pinRequest.success;
+    setPinRequest(null);
+    setActiveModal(null);
+    await fetchData();
+    showNotification(success);
+    handleBudget(res.body.budget);
+    return { ok: true };
   };
 
   useEffect(() => {
@@ -460,9 +501,11 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
         body: JSON.stringify(data)
       });
       if (res.ok) {
+        const body = await res.json().catch(() => ({}));
         setActiveModal(null);
         await fetchData();
         showNotification(successMessage);
+        handleBudget(body.budget);
         return true;
       }
       const body = await res.json().catch(() => ({}));
@@ -487,7 +530,13 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     handleAction(endpoint, build(amount));
   };
 
-  if (!summary) return null;
+  if (!summary) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Ripple size={72} label={labels.thinking} />
+      </div>
+    );
+  }
 
   // Balance card figures, summed from the ledger shown below
   const inflow = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
@@ -506,6 +555,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
           { label: labels.food, icon: Utensils, onClick: () => setActiveModal("food") },
           { label: t.navHistory, icon: Receipt, onClick: () => { setShowAllHistory(true); document.getElementById("ledger")?.scrollIntoView({ behavior: "smooth" }); } },
           { label: labels.helpCenter, icon: MessageSquare, onClick: () => setActiveModal("help") },
+          { label: labels.plan.securityTitle, icon: ShieldCheck, onClick: () => setActiveModal("security") },
         ].map(({ label, icon: Icon, onClick }) => (
           <button
             key={label}
@@ -549,14 +599,21 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
 
           <div className="flex flex-wrap items-center gap-4">
             <button 
-              onClick={() => setActiveModal("cart" as any)}
+              onClick={() => setActiveModal("cart")}
+              aria-label={`${labels.portfolio}${cart.length ? ` (${cart.length})` : ""}`}
               className="relative p-3 bg-[var(--border)] border border-[var(--border)] rounded-2xl text-[var(--text-s)] hover:text-[var(--accent)] transition-all group"
             >
               <ShoppingCart className="w-5 h-5 group-hover:scale-110 transition-transform" />
               {cart.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--accent)] text-[var(--bg)] text-[10px] font-bold rounded-full flex items-center justify-center">
+                <motion.span
+                  key={cart.reduce((s, i) => s + i.quantity, 0)}
+                  initial={{ scale: 1.6 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 16 }}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--accent)] text-[var(--bg)] text-[10px] font-bold rounded-full flex items-center justify-center"
+                >
                   {cart.length}
-                </span>
+                </motion.span>
               )}
             </button>
             
@@ -760,38 +817,8 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
               </div>
             </section>
 
-            {/* Spending Insights Chart */}
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-[32px] p-8 shadow-xl">
-              <div className="flex justify-between items-center mb-10">
-                <h2 className="text-[10px] font-bold tracking-[0.2em] uppercase text-[var(--text-s)]">{labels.volumeTrajectory}</h2>
-                <div className="flex gap-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-[var(--accent)]" />
-                    <span className="text-[9px] text-[var(--text-p)]">Monthly</span>
-                  </div>
-                </div>
-              </div>
-              <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 220 }}>
-                  <AreaChart data={summary.performance}>
-                    <defs>
-                      <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.15}/>
-                        <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                    <XAxis dataKey="month" stroke="var(--text-s)" fontSize={9} tickLine={false} axisLine={false} />
-                    <YAxis hide />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "12px", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }} 
-                      itemStyle={{ color: "var(--text-p)", fontSize: "10px" }}
-                    />
-                    <Area type="monotone" dataKey="balance" stroke="var(--accent)" fillOpacity={1} fill="url(#colorValue)" strokeWidth={1.5} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+            {/* Money history: real balances, and this month's Smart Spend & Save picture */}
+            <MoneyHistory labels={labels} balance={summary.totalBalance} transactions={transactions} plan={planData} onOpenSavings={() => setActiveModal("savings")} />
           </div>
 
           {/* Right Column */}
@@ -869,11 +896,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                     <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] mb-3 text-[var(--accent)]">{labels.capitalFlow}</h3>
                     <div className="min-h-[80px] flex items-center justify-center px-4">
                       {isAdvisorLoading ? (
-                        <div className="flex gap-1.5 Items-center">
-                          {[0, 1, 2].map(i => (
-                            <div key={i} className="w-1 h-1 bg-[var(--accent)] rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-                          ))}
-                        </div>
+                        <Ripple size={40} label={labels.smartAdvisor} />
                       ) : (
                         <p className="text-[11px] text-[var(--text-s)] leading-relaxed italic">
                           {smartInsight ? `"${smartInsight}"` : "Advisor report pending. Synchronize to view latest data analysis."}
@@ -1032,7 +1055,9 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                   {activeModal === "add_tx" && labels.addMoney}
                   {activeModal === "privacy" && labels.privacyPolicy}
                   {activeModal === "help" && labels.helpCenter}
-                  {activeModal === "savings" && labels.market.savingsTitle}
+                  {activeModal === "savings" && labels.plan.title}
+                  {activeModal === "limit" && labels.plan.limitTitle}
+                  {activeModal === "security" && labels.plan.securityTitle}
                 </h2>
                 <button onClick={() => setActiveModal(null)} aria-label={labels.market.close} className="p-2 border border-[var(--border)] rounded-full hover:bg-[var(--border)] transition-colors">
                   <X className="w-5 h-5 text-[var(--text-s)]" />
@@ -1041,51 +1066,76 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
 
               {/* Dynamic Modal Forms */}
               <div className={cn(activeModal === "food" || activeModal === "travel" ? "flex-1 min-h-0" : "space-y-6")}>
-                  {activeModal === "cart" && (
-                    <div className="space-y-6">
-                      {cart.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-[var(--control)] px-4 py-3 text-sm text-[var(--text-s)]">{labels.market.portfolioEmpty}</p>
-                      ) : (
-                        <ul>
-                          {cart.map(item => (
-                            <li key={item.cartId} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-[var(--border)] py-4 last:border-b-0">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-[var(--text-p)]">{item.name}</p>
-                                <p className="tabular mt-0.5 text-[13px] text-[var(--text-s)]">
-                                  {item.checkIn ? `${fill(labels.market.checkInOn, { date: formatDay(item.checkIn, lang) })} · ` : ""}
-                                  {fill(labels.market.rateTimes, { rate: formatPkr(item.price), n: item.quantity })}
-                                </p>
-                              </div>
-                              <p className="tabular text-end text-sm font-medium text-[var(--text-p)]">{formatPkr(item.price * item.quantity)}</p>
-                              <div className="flex items-center gap-3">
-                                <Stepper
-                                  size="sm"
-                                  value={item.quantity}
-                                  min={1}
-                                  max={item.unit === "night" ? 14 : 6}
-                                  onChange={q => updateCartQuantity(item.cartId, q)}
-                                  label={item.unit === "night" ? labels.market.nights : labels.market.passengers}
-                                />
-                                <span className="text-[13px] text-[var(--text-s)]">{countLabel(labels.market, item.quantity, item.unit)}</span>
-                              </div>
-                              <button onClick={() => removeFromCart(item.cartId)} className="justify-self-end text-[13px] text-[var(--text-s)] hover:text-[var(--negative)]">{labels.market.remove}</button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {cart.length > 0 && (
-                        <div className="space-y-4 border-t border-[var(--border)] pt-4">
-                          <div className="tabular flex items-baseline justify-between">
-                            <span className="text-sm text-[var(--text-s)]">{labels.market.total}</span>
-                            <span className="text-lg font-semibold text-[var(--text-p)]">{formatPkr(cart.reduce((s, i) => s + i.price * i.quantity, 0))}</span>
+                  {activeModal === "cart" && (() => {
+                    const shown = cart.filter(i => cartTab === "All" || i.type === cartTab);
+                    const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+                    return (
+                      <div className="space-y-5">
+                        <MotionTabs
+                          id="portfolio"
+                          label={labels.portfolio}
+                          active={cartTab}
+                          onChange={id => setCartTab(id as typeof cartTab)}
+                          tabs={[
+                            { id: "All", label: labels.market.all, count: cart.length },
+                            { id: "Hotel", label: labels.market.hotels, count: cart.filter(i => i.type === "Hotel").length },
+                            { id: "Flight", label: labels.market.flights, count: cart.filter(i => i.type === "Flight").length },
+                          ]}
+                        />
+                        {shown.length === 0 ? (
+                          <p className="rounded-lg border border-dashed border-[var(--control)] px-4 py-3 text-sm text-[var(--text-s)]">{labels.market.portfolioEmpty}</p>
+                        ) : (
+                          <ul>
+                            <AnimatePresence initial={false}>
+                              {shown.map(item => (
+                                <motion.li
+                                  key={item.cartId}
+                                  layout
+                                  initial={{ opacity: 0, x: 16 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  exit={{ opacity: 0, x: -16, height: 0 }}
+                                  transition={{ duration: 0.25 }}
+                                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 overflow-hidden border-b border-[var(--border)] py-4 last:border-b-0"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-[var(--text-p)]">{item.name}</p>
+                                    <p className="tabular mt-0.5 text-[13px] text-[var(--text-s)]">
+                                      {item.checkIn ? `${fill(labels.market.checkInOn, { date: formatDay(item.checkIn, lang) })} · ` : ""}
+                                      {fill(labels.market.rateTimes, { rate: formatPkr(item.price), n: item.quantity })}
+                                    </p>
+                                  </div>
+                                  <AnimatedPkr value={item.price * item.quantity} className="text-end text-sm font-medium text-[var(--text-p)]" />
+                                  <div className="flex items-center gap-3">
+                                    <Stepper
+                                      size="sm"
+                                      value={item.quantity}
+                                      min={1}
+                                      max={item.unit === "night" ? 14 : 6}
+                                      onChange={q => updateCartQuantity(item.cartId, q)}
+                                      label={item.unit === "night" ? labels.market.nights : labels.market.passengers}
+                                    />
+                                    <span className="text-[13px] text-[var(--text-s)]">{countLabel(labels.market, item.quantity, item.unit)}</span>
+                                  </div>
+                                  <button onClick={() => removeFromCart(item.cartId)} className="justify-self-end text-[13px] text-[var(--text-s)] hover:text-[var(--negative)]">{labels.market.remove}</button>
+                                </motion.li>
+                              ))}
+                            </AnimatePresence>
+                          </ul>
+                        )}
+                        {cart.length > 0 && (
+                          <div className="space-y-4 border-t border-[var(--border)] pt-4">
+                            <div className="tabular flex items-baseline justify-between">
+                              <span className="text-sm text-[var(--text-s)]">{labels.market.total}</span>
+                              <AnimatedPkr value={total} className="text-lg font-semibold text-[var(--text-p)]" />
+                            </div>
+                            <motion.button whileTap={{ scale: 0.98 }} onClick={checkoutCart} disabled={isProcessing} className="flex h-11 w-full items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-90 disabled:opacity-50">
+                              {isProcessing ? <Ripple size={22} label={labels.market.settle} /> : labels.market.settle}
+                            </motion.button>
                           </div>
-                          <button onClick={checkoutCart} disabled={isProcessing} className="h-11 w-full rounded-full bg-[var(--accent)] text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-90 disabled:opacity-50">
-                            {labels.market.settle}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {activeModal === "feedback_main" as any && (
                     <div className="space-y-8">
@@ -1184,6 +1234,9 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                             : "bg-[var(--card)] border border-[var(--border)] self-start rounded-tl-none text-[var(--text-s)]"
                         )}>
                           {m.content}
+                          {m.escalation && (
+                            <a href={m.escalation.url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block rounded-full bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-[var(--bg)] whitespace-normal">{labels.plan.escalate}</a>
+                          )}
                           {m.sources && m.sources.length > 0 && (
                             <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1 whitespace-normal">
                               <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--accent)]">{labels.sources}</p>
@@ -1195,7 +1248,8 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                         </div>
                       ))}
                       {isChatLoading && (
-                        <div className="bg-[var(--card)] border border-[var(--border)] self-start p-4 rounded-3xl rounded-tl-none text-xs text-[var(--text-s)] italic animate-pulse">
+                        <div className="bg-[var(--card)] border border-[var(--border)] self-start p-4 rounded-3xl rounded-tl-none text-xs text-[var(--text-s)] flex items-center gap-3">
+                          <Ripple size={22} label={labels.thinking} />
                           {labels.thinking}
                         </div>
                       )}
@@ -1299,28 +1353,32 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                   />
                 )}
 
-                {activeModal === "savings" && (
-                  <div className="space-y-6">
-                    <p className="text-sm text-[var(--text-p)]">
-                      {fill(labels.market.savingsRate, { rate: `${(summary.savingsRate * 100).toFixed(1)}%` })}
-                    </p>
-                    <dl className="tabular space-y-3 text-sm">
-                      <div className="flex justify-between"><dt className="text-[var(--text-s)]">{labels.market.income}</dt><dd className="text-[var(--text-p)]">{formatPkr(summary.monthlyIncome)}</dd></div>
-                      <div className="flex justify-between"><dt className="text-[var(--text-s)]">{labels.market.expenses}</dt><dd className="text-[var(--text-p)]">−{formatPkr(summary.monthlyExpenses)}</dd></div>
-                      <div className="flex justify-between border-t border-[var(--border)] pt-3 text-base font-semibold"><dt className="text-[var(--text-p)]">{labels.market.saved}</dt><dd className="text-[var(--text-p)]">{formatPkr(summary.monthlyIncome - summary.monthlyExpenses)}</dd></div>
-                    </dl>
-                    <div className="h-2 overflow-hidden rounded-full bg-[var(--border)]" role="img" aria-label={`${(summary.savingsRate * 100).toFixed(1)}%`}>
-                      <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${summary.savingsRate * 100}%` }} />
-                    </div>
-                  </div>
+                {activeModal === "savings" && planData && (
+                  <SavingsScreen data={planData} t={labels.plan} onChanged={d => (d ? setPlanData(prev => ({ ...prev, ...d })) : fetchPlan())} onOpenDecision={() => setActiveModal("limit")} notify={showNotification} />
                 )}
 
-                {activeModal === "transfer" && (
+                {activeModal === "limit" && planData && (
+                  <LimitDecision data={planData} t={labels.plan} onChanged={d => { setPlanData(prev => ({ ...prev, ...d })); fetchData(); }} onClose={() => setActiveModal(null)} />
+                )}
+
+                {activeModal === "security" && <SecurityCenter t={labels.plan} />}
+
+                {(activeModal === "transfer" || activeModal === "loan") && pinRequest && (
+                  <PinPad what={pinRequest.what} t={labels.plan} onSubmit={submitWithPin} onBack={() => setPinRequest(null)} />
+                )}
+
+                {activeModal === "transfer" && !pinRequest && (
                   <>
                     <InputGroup label="Recipient Account / Number" type="text" placeholder="e.g. 03450000000" {...bindField("recipient")} />
                     <InputGroup label="Select Destination" dropdown={TRANSFER_DESTINATIONS} {...bindField("destination", TRANSFER_DESTINATIONS)} />
                     <InputGroup label="Amount (PKR)" type="number" placeholder="5,000" {...bindField("amount")} />
-                    <SubmitButton label="Confirm Transfer" onClick={() => submitForm("/api/transactions/transfer", ["recipient"], amount => ({ amount, to: `${fieldValue("recipient")} (${fieldValue("destination", TRANSFER_DESTINATIONS)})` }))} loading={isProcessing} />
+                    <BudgetImpact amount={form.amount || ""} label={labels.plan.impactLabel} />
+                    <SubmitButton label="Confirm Transfer" onClick={() => {
+                      const amount = parseFloat(form.amount);
+                      if (!fieldValue("recipient") || !(amount > 0)) return showNotification("Please fill in every field with a valid amount", "error");
+                      const to = `${fieldValue("recipient")} (${fieldValue("destination", TRANSFER_DESTINATIONS)})`;
+                      setPinRequest({ endpoint: "/api/transactions/transfer", data: { amount, to }, what: `${formatPkr(amount)} → ${to}`, success: "Transfer successful" });
+                    }} loading={isProcessing} />
                   </>
                 )}
 
@@ -1329,6 +1387,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                     <InputGroup label="Service Provider" dropdown={BILL_PROVIDERS} {...bindField("provider", BILL_PROVIDERS)} />
                     <InputGroup label="Consumer Number" type="text" placeholder="9PKR-8822-XX" {...bindField("consumerId")} />
                     <InputGroup label="Amount (PKR)" type="number" placeholder="2,450" {...bindField("amount")} />
+                    <BudgetImpact amount={form.amount || ""} label={labels.plan.impactLabel} />
                     <SubmitButton label="Pay Bill" onClick={() => submitForm("/api/bills/pay", ["consumerId"], amount => ({ provider: fieldValue("provider", BILL_PROVIDERS).split(" / ")[0], consumerId: fieldValue("consumerId"), amount }))} loading={isProcessing} />
                   </>
                 )}
@@ -1342,14 +1401,20 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                   </>
                 )}
 
-                {activeModal === "loan" && (
+                {activeModal === "loan" && !pinRequest && (
                   <div className="text-center space-y-6">
                     <div className="py-8 bg-[var(--card)] rounded-3xl border border-[var(--border)]">
                       <p className="text-xs text-[var(--text-s)] uppercase tracking-widest mb-1">Pre-approved Limit</p>
                       <p className="text-4xl font-light text-[var(--accent)]">PKR 15,000</p>
                     </div>
                     <p className="text-[10px] text-[var(--text-s)] leading-relaxed">ReadyCash is an instant credit facility. Repayment terms of 15-30 days apply with standard markup.</p>
-                    <SubmitButton label="Disburse Now" onClick={() => handleAction("/api/loans/readycash", { amount: 15000 })} loading={isProcessing} />
+                    {planData?.plan?.flexible && planData.plan.savings - (planData.plan.floor ?? 0) >= 15000 && (
+                      <div className="rounded-2xl bg-[var(--save-soft)] p-4 text-start text-sm">
+                        <p className="text-[var(--text-p)]">{fill(labels.plan.loanSavingsFirst, { amount: formatPkr(planData.plan.savings - (planData.plan.floor ?? 0)) })}</p>
+                        <button type="button" onClick={() => setActiveModal("savings")} className="mt-2 font-semibold text-[var(--save)] underline underline-offset-4">{labels.plan.useSavingsInstead}</button>
+                      </div>
+                    )}
+                    <SubmitButton label="Disburse Now" onClick={() => setPinRequest({ endpoint: "/api/loans/readycash", data: {}, what: `${labels.readyCash} ${formatPkr(15000)}`, success: "Credit limit disbursed" })} loading={isProcessing} />
                   </div>
                 )}
 

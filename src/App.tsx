@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { Dashboard } from "./components/Dashboard";
 import { ThreeBackground } from "./components/ThreeBackground";
+import { Ripple } from "./components/market/motionParts";
 import { Language } from "./translations";
 
 export type Theme = "light" | "dark" | "system";
@@ -48,8 +49,12 @@ export default function App() {
     <div className={`relative overflow-x-hidden selection:bg-[var(--accent)]/30 selection:text-[var(--text-p)] ${lang === "ur" || lang === "ar" ? "rtl" : "ltr"}`} dir={lang === "ur" || lang === "ar" ? "rtl" : "ltr"}>
       <ThreeBackground theme={theme} />
       <div className="relative z-10 transition-all duration-1000">
-        {user && (
+        {user ? (
           <Dashboard onLogout={handleLogout} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} user={user} />
+        ) : (
+          <div className="flex min-h-screen items-center justify-center">
+            <Ripple size={72} label="Loading" />
+          </div>
         )}
       </div>
     </div>

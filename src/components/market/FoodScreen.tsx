@@ -1,12 +1,18 @@
 /**
- * Order Food: Lahore restaurants, each menu by section, and a basket that checks the
- * restaurant's minimum order. The server prices the order again from its own menu.
+ * Order Food: Lahore restaurants as a masonry of cover cards, each menu by section, and a
+ * basket that checks the restaurant's minimum order. Adding a dish flies it into the basket.
+ * The server prices the order again from its own menu.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, Plus, Search, ShoppingBag } from "lucide-react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { ArrowLeft, Plus, Search, ShoppingBag } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { findMenuItem, LIMITS, type Restaurant } from "../../../shared/marketplace";
-import { Monogram, PrimaryButton, Stepper, fill, formatPkr } from "./parts";
+import { covers } from "../../../shared/covers";
+import { PrimaryButton, Stepper } from "./parts";
+import { AnimatedPkr, LensCover, MotionTabs, PhotoCredits, Ripple } from "./motionParts";
+import { cardMotion, fill, formatPkr } from "./helpers";
 import type { translations } from "../../translations";
 
 export type Basket = { restaurantId: string; items: Record<string, number> } | null;
@@ -22,10 +28,16 @@ type Props = {
   isProcessing: boolean;
 };
 
+type Flyer = { key: number; src: string; from: DOMRect; to: DOMRect };
+
 export function FoodScreen({ restaurants, basket, setBasket, t, confirm, onPlaceOrder, isProcessing }: Props) {
+  const reduce = useReducedMotion();
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showBasket, setShowBasket] = useState(false); // phone only
+  const [flyer, setFlyer] = useState<Flyer | null>(null);
+  const basketTarget = useRef<HTMLHeadingElement>(null);
+  const barTarget = useRef<HTMLButtonElement>(null);
   const open = restaurants.find(r => r.id === openId) || null;
 
   const basketRestaurant = basket ? restaurants.find(r => r.id === basket.restaurantId) || null : null;
@@ -56,29 +68,29 @@ export function FoodScreen({ restaurants, basket, setBasket, t, confirm, onPlace
     });
   };
 
-  const basketPanel = (
-    <BasketPanel
-      restaurant={basketRestaurant}
-      lines={lines}
-      subtotal={subtotal}
-      t={t}
-      isProcessing={isProcessing}
-      isOpenMenu={!!open && open.id === basketRestaurant?.id}
-      onOpenMenu={() => { setOpenId(basketRestaurant!.id); setShowBasket(false); }}
-      onQuantity={(itemId, q) => basketRestaurant && setQuantity(basketRestaurant, itemId, q)}
-      onPlaceOrder={() => basketRestaurant && onPlaceOrder(basketRestaurant, lines.map(l => ({ id: l.item.id, quantity: l.quantity })))}
-    />
-  );
+  // A small copy of the restaurant's photo flies from the Add button into the basket
+  const flyFrom = (restaurant: Restaurant, from: DOMRect) => {
+    const cover = covers[restaurant.id];
+    const target = [basketTarget.current, barTarget.current].find(el => el && el.offsetParent !== null);
+    if (reduce || !cover || !target) return;
+    setFlyer({ key: Date.now(), src: cover.src, from, to: target.getBoundingClientRect() });
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="grid min-h-0 flex-1 gap-6 md:grid-cols-[minmax(0,1fr)_300px]">
         <div className={cn("min-h-0 overflow-y-auto pe-1 scrollbar-hide", showBasket && "hidden md:block")}>
-          {open ? (
-            <MenuView restaurant={open} index={restaurants.indexOf(open)} t={t} onBack={() => setOpenId(null)} quantityOf={quantityOf} setQuantity={setQuantity} />
-          ) : (
-            <RestaurantList restaurants={restaurants} query={query} setQuery={setQuery} t={t} onOpen={setOpenId} />
-          )}
+          <AnimatePresence mode="wait" initial={false}>
+            {open ? (
+              <motion.div key={open.id} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.25 }}>
+                <MenuView restaurant={open} t={t} onBack={() => setOpenId(null)} quantityOf={quantityOf} setQuantity={setQuantity} onAdded={flyFrom} />
+              </motion.div>
+            ) : (
+              <motion.div key="list" initial={{ opacity: 0, x: -24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }} transition={{ duration: 0.25 }}>
+                <RestaurantList restaurants={restaurants} query={query} setQuery={setQuery} t={t} onOpen={setOpenId} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
         <aside className={cn("min-h-0 overflow-y-auto md:block", showBasket ? "block" : "hidden")} aria-label={t.basket}>
           {showBasket && (
@@ -86,35 +98,79 @@ export function FoodScreen({ restaurants, basket, setBasket, t, confirm, onPlace
               <ArrowLeft className="h-4 w-4 rtl:rotate-180" /> {t.menu}
             </button>
           )}
-          {basketPanel}
+          <BasketPanel
+            titleRef={basketTarget}
+            restaurant={basketRestaurant}
+            lines={lines}
+            count={count}
+            subtotal={subtotal}
+            t={t}
+            isProcessing={isProcessing}
+            isOpenMenu={!!open && open.id === basketRestaurant?.id}
+            onOpenMenu={() => { setOpenId(basketRestaurant!.id); setShowBasket(false); }}
+            onQuantity={(itemId, q) => basketRestaurant && setQuantity(basketRestaurant, itemId, q)}
+            onPlaceOrder={() => basketRestaurant && onPlaceOrder(basketRestaurant, lines.map(l => ({ id: l.item.id, quantity: l.quantity })))}
+          />
         </aside>
       </div>
 
       {/* Phone: the basket folds into one bar under the menu */}
-      {count > 0 && !showBasket && (
-        <button
-          type="button"
-          onClick={() => setShowBasket(true)}
-          aria-label={`${t.viewBasket}, ${fill(t.inBasket, { n: count })}`}
-          className="mt-4 flex h-12 flex-none items-center justify-between gap-4 rounded-full bg-[var(--accent)] px-5 text-sm font-semibold text-[var(--bg)] md:hidden"
-        >
-          <span className="inline-flex items-center gap-2"><ShoppingBag className="h-4 w-4" /><span className="tabular">{count}</span> {t.viewBasket}</span>
-          <span className="tabular">{formatPkr(subtotal + (basketRestaurant?.deliveryFee || 0))}</span>
-        </button>
+      <AnimatePresence>
+        {count > 0 && !showBasket && (
+          <motion.button
+            ref={barTarget}
+            type="button"
+            onClick={() => setShowBasket(true)}
+            aria-label={`${t.viewBasket}, ${fill(t.inBasket, { n: count })}`}
+            initial={{ y: 40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 40, opacity: 0 }}
+            whileTap={{ scale: 0.98 }}
+            className="mt-4 flex h-12 flex-none items-center justify-between gap-4 rounded-full bg-[var(--accent)] px-5 text-sm font-semibold text-[var(--bg)] md:hidden"
+          >
+            <span className="inline-flex items-center gap-2"><ShoppingBag className="h-4 w-4" /><BumpCount value={count} /> {t.viewBasket}</span>
+            <AnimatedPkr value={subtotal + (basketRestaurant?.deliveryFee || 0)} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {flyer && createPortal(
+        <motion.img
+          key={flyer.key}
+          src={flyer.src}
+          alt=""
+          aria-hidden
+          className="pointer-events-none fixed z-[200] h-12 w-12 rounded-full object-cover shadow-xl ring-2 ring-[var(--accent)]"
+          initial={{ left: flyer.from.left + flyer.from.width / 2 - 24, top: flyer.from.top + flyer.from.height / 2 - 24, scale: 1, opacity: 1 }}
+          animate={{ left: flyer.to.left + 8, top: flyer.to.top - 12, scale: 0.35, opacity: 0.4 }}
+          transition={{ duration: 0.6, ease: [0.45, 0, 0.2, 1] }}
+          onAnimationComplete={() => setFlyer(null)}
+        />,
+        document.body
       )}
     </div>
+  );
+}
+
+/** A count that pops when it changes */
+function BumpCount({ value }: { value: number }) {
+  return (
+    <motion.span key={value} initial={{ scale: 1.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }} className="tabular inline-block">
+      {value}
+    </motion.span>
   );
 }
 
 function RestaurantList({ restaurants, query, setQuery, t, onOpen }: {
   restaurants: Restaurant[]; query: string; setQuery: (q: string) => void; t: MarketLabels; onOpen: (id: string) => void;
 }) {
+  const reduce = useReducedMotion();
   const q = query.trim().toLowerCase();
   const results = restaurants
-    .map((r, index) => {
+    .map(r => {
       const dishes = q ? r.menu.flatMap(s => s.items).filter(i => i.name.toLowerCase().includes(q)) : [];
       const matchesPlace = !q || [r.name, r.cuisine, r.area].some(v => v.toLowerCase().includes(q));
-      return { r, index, dishes, show: matchesPlace || dishes.length > 0 };
+      return { r, dishes, show: matchesPlace || dishes.length > 0 };
     })
     .filter(x => x.show);
 
@@ -137,49 +193,56 @@ function RestaurantList({ restaurants, query, setQuery, t, onOpen }: {
         />
       </label>
 
-      <ul className="mt-3">
-        {results.map(({ r, index, dishes }) => (
-          <li key={r.id} className="border-b border-[var(--border)] last:border-b-0">
-            <button
-              type="button"
-              onClick={() => onOpen(r.id)}
-              className="group -mx-2 flex w-[calc(100%+1rem)] items-center gap-4 rounded-xl px-2 py-4 text-start transition-colors hover:bg-[var(--raised)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
-            >
-              <Monogram name={r.name} index={index} image={r.image} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-medium text-[var(--text-p)]">{r.name}</p>
-                <p className="mt-0.5 truncate text-[13px] text-[var(--text-s)]">{r.cuisine} · {r.area}</p>
-                {dishes.length > 0 && (
-                  <p className="mt-1 truncate text-[13px] text-[var(--text-p)]">{fill(t.matches, { items: dishes.slice(0, 3).map(d => d.name).join(", ") })}</p>
-                )}
-                <p className="tabular mt-1 text-[13px] text-[var(--text-s)] sm:hidden">
-                  {fill(t.minutes, { a: r.deliveryMinutes[0], b: r.deliveryMinutes[1] })} · {t.deliveryFee} {formatPkr(r.deliveryFee)}
-                </p>
-              </div>
-              <div className="tabular hidden flex-none text-end sm:block">
-                <p className="text-sm text-[var(--text-p)]">{fill(t.minutes, { a: r.deliveryMinutes[0], b: r.deliveryMinutes[1] })}</p>
-                <p className="mt-0.5 text-[13px] text-[var(--text-s)]">{t.deliveryFee} {formatPkr(r.deliveryFee)}</p>
-                <p className="text-[13px] text-[var(--text-s)]">{t.minOrder} {formatPkr(r.minOrder)}</p>
-              </div>
-              <ChevronRight className="h-4 w-4 flex-none text-[var(--text-s)] transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" />
-            </button>
-          </li>
-        ))}
-        {results.length === 0 && (
-          <li className="rounded-lg border border-dashed border-[var(--control)] px-4 py-3 text-sm text-[var(--text-s)]">{fill(t.noMatch, { q: query.trim() })}</li>
-        )}
-      </ul>
+      {/* Pinterest-style masonry: cards keep their photo's own proportions */}
+      <div className="mt-4 columns-1 gap-4 sm:columns-2">
+        <AnimatePresence initial={false}>
+          {results.map(({ r, dishes }, index) => {
+            const cover = covers[r.id];
+            return (
+              <motion.button
+                key={r.id}
+                type="button"
+                layout={!reduce}
+                {...cardMotion(index, reduce)}
+                exit={{ opacity: 0, scale: 0.96 }}
+                onClick={() => onOpen(r.id)}
+                className="mb-4 block w-full break-inside-avoid overflow-hidden rounded-2xl bg-[var(--raised)] text-start transition-shadow hover:shadow-[0_12px_30px_rgba(0,0,0,0.35)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              >
+                {cover && <LensCover cover={cover} ratio={cover.height / cover.width} className="w-full" lens={110} />}
+                <div className="p-4">
+                  <p className="text-base font-semibold text-[var(--text-p)]">{r.name}</p>
+                  <p className="mt-0.5 text-[13px] text-[var(--text-s)]">{r.cuisine} · {r.area}</p>
+                  {dishes.length > 0 && (
+                    <p className="mt-2 text-[13px] text-[var(--text-p)]">{fill(t.matches, { items: dishes.slice(0, 3).map(d => d.name).join(", ") })}</p>
+                  )}
+                  <p className="tabular mt-3 flex flex-wrap gap-x-3 gap-y-0.5 text-[13px]">
+                    <span className="whitespace-nowrap text-[var(--text-p)]">{fill(t.minutes, { a: r.deliveryMinutes[0], b: r.deliveryMinutes[1] })}</span>
+                    <span className="whitespace-nowrap text-[var(--text-s)]">{t.deliveryFee} {formatPkr(r.deliveryFee)}</span>
+                    <span className="whitespace-nowrap text-[var(--text-s)]">{t.minOrder} {formatPkr(r.minOrder)}</span>
+                  </p>
+                </div>
+              </motion.button>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+      {results.length === 0 && (
+        <p className="mt-4 rounded-lg border border-dashed border-[var(--control)] px-4 py-3 text-sm text-[var(--text-s)]">{fill(t.noMatch, { q: query.trim() })}</p>
+      )}
+      <PhotoCredits ids={restaurants.map(r => r.id)} t={t} />
     </div>
   );
 }
 
-function MenuView({ restaurant, index, t, onBack, quantityOf, setQuantity }: {
-  restaurant: Restaurant; index: number; t: MarketLabels; onBack: () => void;
+function MenuView({ restaurant, t, onBack, quantityOf, setQuantity, onAdded }: {
+  restaurant: Restaurant; t: MarketLabels; onBack: () => void;
   quantityOf: (r: Restaurant, itemId: string) => number; setQuantity: (r: Restaurant, itemId: string, q: number) => void;
+  onAdded: (r: Restaurant, from: DOMRect) => void;
 }) {
   const [active, setActive] = useState(restaurant.menu[0]?.name);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const tabsRef = useRef<HTMLDivElement>(null);
+  const cover = covers[restaurant.id];
 
   const scroller = () => tabsRef.current?.closest(".overflow-y-auto") as HTMLElement | null;
   // A section's top within the scrolling list (offsetTop would measure from the dialog)
@@ -224,38 +287,27 @@ function MenuView({ restaurant, index, t, onBack, quantityOf, setQuantity }: {
         <ArrowLeft className="h-4 w-4 rtl:rotate-180" /> {t.allRestaurants}
       </button>
 
-      <div className="mt-4 flex items-start gap-4">
-        <Monogram name={restaurant.name} index={index} size={56} image={restaurant.image} />
-        <div className="min-w-0">
-          <h3 className="text-xl font-semibold tracking-tight text-[var(--text-p)]">{restaurant.name}</h3>
-          <p className="mt-0.5 text-sm text-[var(--text-s)]">{restaurant.cuisine} · {restaurant.area}</p>
-          {/* Each fact keeps its label and figure together, so a wrap never strands a separator */}
-          <p className="tabular mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-[var(--text-p)]">
-            <span className="whitespace-nowrap">{fill(t.minutes, { a: restaurant.deliveryMinutes[0], b: restaurant.deliveryMinutes[1] })}</span>
-            <span className="whitespace-nowrap"><span className="text-[var(--text-s)]">{t.deliveryFee} </span>{formatPkr(restaurant.deliveryFee)}</span>
-            <span className="whitespace-nowrap"><span className="text-[var(--text-s)]">{t.minOrder} </span>{formatPkr(restaurant.minOrder)}</span>
-          </p>
-        </div>
+      {cover && <LensCover cover={cover} eager className="mt-4 h-44 w-full rounded-2xl sm:h-52" lens={140} />}
+
+      <div className="mt-4 min-w-0">
+        <h3 className="text-xl font-semibold tracking-tight text-[var(--text-p)]">{restaurant.name}</h3>
+        <p className="mt-0.5 text-sm text-[var(--text-s)]">{restaurant.cuisine} · {restaurant.area}</p>
+        {/* Each fact keeps its label and figure together, so a wrap never strands a separator */}
+        <p className="tabular mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-[var(--text-p)]">
+          <span className="whitespace-nowrap">{fill(t.minutes, { a: restaurant.deliveryMinutes[0], b: restaurant.deliveryMinutes[1] })}</span>
+          <span className="whitespace-nowrap"><span className="text-[var(--text-s)]">{t.deliveryFee} </span>{formatPkr(restaurant.deliveryFee)}</span>
+          <span className="whitespace-nowrap"><span className="text-[var(--text-s)]">{t.minOrder} </span>{formatPkr(restaurant.minOrder)}</span>
+        </p>
       </div>
 
       <div ref={tabsRef} className="sticky top-0 z-10 mt-5 bg-[var(--card)] pt-1">
-        <div role="tablist" aria-label={t.menu} className="flex gap-6 overflow-x-auto border-b border-[var(--border)] scrollbar-hide">
-          {restaurant.menu.map(section => (
-            <button
-              key={section.name}
-              role="tab"
-              type="button"
-              aria-selected={active === section.name}
-              onClick={() => jumpTo(section.name)}
-              className={cn(
-                "-mb-px flex-none whitespace-nowrap border-b-2 pb-3 text-sm transition-colors",
-                active === section.name ? "border-[var(--accent)] font-medium text-[var(--text-p)]" : "border-transparent text-[var(--text-s)] hover:text-[var(--text-p)]"
-              )}
-            >
-              {section.name}
-            </button>
-          ))}
-        </div>
+        <MotionTabs
+          id={`menu-${restaurant.id}`}
+          label={t.menu}
+          active={active}
+          onChange={jumpTo}
+          tabs={restaurant.menu.map(s => ({ id: s.name, label: s.name }))}
+        />
       </div>
 
       {restaurant.menu.map(section => (
@@ -272,18 +324,27 @@ function MenuView({ restaurant, index, t, onBack, quantityOf, setQuantity }: {
                     <p className="tabular mt-1 text-sm text-[var(--text-p)]">{formatPkr(item.price)}</p>
                   </div>
                   <div className="flex justify-end">
-                    {quantity === 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setQuantity(restaurant, item.id, 1)}
-                        aria-label={`${t.add}: ${item.name}`}
-                        className="inline-flex h-10 items-center gap-1.5 rounded-full border border-[var(--control)] px-4 text-sm font-medium text-[var(--text-p)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
-                      >
-                        <Plus className="h-4 w-4" /> {t.add}
-                      </button>
-                    ) : (
-                      <Stepper value={quantity} max={LIMITS.dishQuantity} onChange={q => setQuantity(restaurant, item.id, q)} label={item.name} />
-                    )}
+                    <AnimatePresence mode="popLayout" initial={false}>
+                      {quantity === 0 ? (
+                        <motion.button
+                          key="add"
+                          type="button"
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          whileTap={{ scale: 0.92 }}
+                          onClick={e => { setQuantity(restaurant, item.id, 1); onAdded(restaurant, e.currentTarget.getBoundingClientRect()); }}
+                          aria-label={`${t.add}: ${item.name}`}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-full border border-[var(--control)] px-4 text-sm font-medium text-[var(--text-p)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                        >
+                          <Plus className="h-4 w-4" /> {t.add}
+                        </motion.button>
+                      ) : (
+                        <motion.div key="stepper" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}>
+                          <Stepper value={quantity} max={LIMITS.dishQuantity} onChange={q => setQuantity(restaurant, item.id, q)} label={item.name} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </li>
               );
@@ -295,9 +356,11 @@ function MenuView({ restaurant, index, t, onBack, quantityOf, setQuantity }: {
   );
 }
 
-function BasketPanel({ restaurant, lines, subtotal, t, isProcessing, isOpenMenu, onOpenMenu, onQuantity, onPlaceOrder }: {
+function BasketPanel({ titleRef, restaurant, lines, count, subtotal, t, isProcessing, isOpenMenu, onOpenMenu, onQuantity, onPlaceOrder }: {
+  titleRef: React.Ref<HTMLHeadingElement>;
   restaurant: Restaurant | null;
   lines: { item: { id: string; name: string; price: number }; quantity: number }[];
+  count: number;
   subtotal: number;
   t: MarketLabels;
   isProcessing: boolean;
@@ -306,59 +369,73 @@ function BasketPanel({ restaurant, lines, subtotal, t, isProcessing, isOpenMenu,
   onQuantity: (itemId: string, quantity: number) => void;
   onPlaceOrder: () => void;
 }) {
-  if (!restaurant || lines.length === 0) {
-    return (
-      <div className="rounded-2xl bg-[var(--raised)] p-5">
-        <h3 className="text-base font-semibold text-[var(--text-p)]">{t.basket}</h3>
-        <p className="mt-2 text-sm text-[var(--text-s)]">{t.basketEmpty}</p>
-      </div>
-    );
-  }
-
-  const total = subtotal + restaurant.deliveryFee;
-  const short = Math.max(0, restaurant.minOrder - subtotal);
-  const progress = Math.min(1, subtotal / restaurant.minOrder);
+  const empty = !restaurant || lines.length === 0;
+  const fee = restaurant?.deliveryFee || 0;
+  const short = restaurant ? Math.max(0, restaurant.minOrder - subtotal) : 0;
+  const progress = restaurant ? Math.min(1, subtotal / restaurant.minOrder) : 0;
 
   return (
-    <div className="rounded-2xl bg-[var(--raised)] p-5">
+    <motion.div layout className="rounded-2xl bg-[var(--raised)] p-5" transition={{ type: "spring", stiffness: 300, damping: 32 }}>
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-base font-semibold text-[var(--text-p)]">{t.basket}</h3>
-        {!isOpenMenu && (
+        <h3 ref={titleRef} className="flex items-center gap-2 text-base font-semibold text-[var(--text-p)]">
+          {t.basket}
+          {count > 0 && (
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-[var(--accent)] px-1.5 text-xs font-semibold text-[var(--bg)]"><BumpCount value={count} /></span>
+          )}
+        </h3>
+        {!empty && !isOpenMenu && (
           <button type="button" onClick={onOpenMenu} className="text-sm text-[var(--accent)] hover:underline">{t.openBasketMenu}</button>
         )}
       </div>
-      <p className="mt-0.5 text-sm text-[var(--text-s)]">{fill(t.basketFrom, { name: restaurant.name })}</p>
 
-      <ul className="mt-4 space-y-3">
-        {lines.map(({ item, quantity }) => (
-          <li key={item.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2">
-            <p className="text-sm text-[var(--text-p)]">{item.name}</p>
-            <p className="tabular text-end text-sm text-[var(--text-p)]">{formatPkr(item.price * quantity)}</p>
-            <Stepper size="sm" value={quantity} max={LIMITS.dishQuantity} onChange={q => onQuantity(item.id, q)} label={item.name} />
-          </li>
-        ))}
-      </ul>
+      {empty ? (
+        <p className="mt-2 text-sm text-[var(--text-s)]">{t.basketEmpty}</p>
+      ) : (
+        <>
+          <p className="mt-0.5 text-sm text-[var(--text-s)]">{fill(t.basketFrom, { name: restaurant!.name })}</p>
 
-      <dl className="tabular mt-5 space-y-2 border-t border-[var(--border)] pt-4 text-sm">
-        <div className="flex justify-between"><dt className="text-[var(--text-s)]">{t.subtotal}</dt><dd className="text-[var(--text-p)]">{formatPkr(subtotal)}</dd></div>
-        <div className="flex justify-between"><dt className="text-[var(--text-s)]">{t.deliveryFee}</dt><dd className="text-[var(--text-p)]">{formatPkr(restaurant.deliveryFee)}</dd></div>
-        <div className="flex justify-between text-base font-semibold"><dt className="text-[var(--text-p)]">{t.total}</dt><dd className="text-[var(--text-p)]">{formatPkr(total)}</dd></div>
-      </dl>
+          <ul className="mt-4 space-y-3">
+            <AnimatePresence initial={false}>
+              {lines.map(({ item, quantity }) => (
+                <motion.li
+                  key={item.id}
+                  layout
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 overflow-hidden"
+                >
+                  <p className="text-sm text-[var(--text-p)]">{item.name}</p>
+                  <AnimatedPkr value={item.price * quantity} className="text-end text-sm text-[var(--text-p)]" />
+                  <Stepper size="sm" value={quantity} max={LIMITS.dishQuantity} onChange={q => onQuantity(item.id, q)} label={item.name} />
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </ul>
 
-      {/* Progress to the restaurant's minimum order, at its true ratio */}
-      <div className="mt-4">
-        <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]" role="progressbar" aria-valuemin={0} aria-valuemax={restaurant.minOrder} aria-valuenow={Math.min(subtotal, restaurant.minOrder)} aria-label={t.minOrder}>
-          <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${progress * 100}%` }} />
-        </div>
-        <p id="basket-min" className={cn("tabular mt-2 text-[13px]", short ? "text-[var(--text-p)]" : "text-[var(--positive)]")}>
-          {short ? fill(t.addMore, { amount: formatPkr(short) }) : t.minReached}
-        </p>
-        {short > 0 && <p className="tabular text-[13px] text-[var(--text-s)]">{fill(t.minProgress, { have: formatPkr(subtotal), min: formatPkr(restaurant.minOrder) })}</p>}
-      </div>
+          <dl className="tabular mt-5 space-y-2 border-t border-[var(--border)] pt-4 text-sm">
+            <div className="flex justify-between"><dt className="text-[var(--text-s)]">{t.subtotal}</dt><dd className="text-[var(--text-p)]"><AnimatedPkr value={subtotal} /></dd></div>
+            <div className="flex justify-between"><dt className="text-[var(--text-s)]">{t.deliveryFee}</dt><dd className="text-[var(--text-p)]">{formatPkr(fee)}</dd></div>
+            <div className="flex justify-between text-base font-semibold"><dt className="text-[var(--text-p)]">{t.total}</dt><dd className="text-[var(--text-p)]"><AnimatedPkr value={subtotal + fee} /></dd></div>
+          </dl>
 
-      <PrimaryButton className="mt-5 w-full" disabled={short > 0 || isProcessing} aria-describedby="basket-min" onClick={onPlaceOrder}>
-        {isProcessing ? "…" : <>{t.placeOrder} <span className="tabular">· {formatPkr(total)}</span></>}
-      </PrimaryButton>
-    </div>
+          {/* Progress to the restaurant's minimum order, at its true ratio */}
+          <div className="mt-4">
+            <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]" role="progressbar" aria-valuemin={0} aria-valuemax={restaurant!.minOrder} aria-valuenow={Math.min(subtotal, restaurant!.minOrder)} aria-label={t.minOrder}>
+              <motion.div className="h-full rounded-full bg-[var(--accent)]" initial={false} animate={{ width: `${progress * 100}%` }} transition={{ type: "spring", stiffness: 160, damping: 24 }} />
+            </div>
+            <p id="basket-min" className={cn("tabular mt-2 text-[13px]", short ? "text-[var(--text-p)]" : "text-[var(--positive)]")}>
+              {short ? fill(t.addMore, { amount: formatPkr(short) }) : t.minReached}
+            </p>
+            {short > 0 && <p className="tabular text-[13px] text-[var(--text-s)]">{fill(t.minProgress, { have: formatPkr(subtotal), min: formatPkr(restaurant!.minOrder) })}</p>}
+          </div>
+
+          <PrimaryButton className="mt-5 w-full" disabled={short > 0 || isProcessing} aria-describedby="basket-min" onClick={onPlaceOrder}>
+            {isProcessing ? <Ripple size={22} label={t.placeOrder} /> : <>{t.placeOrder} <span className="tabular">· {formatPkr(subtotal + fee)}</span></>}
+          </PrimaryButton>
+        </>
+      )}
+    </motion.div>
   );
 }

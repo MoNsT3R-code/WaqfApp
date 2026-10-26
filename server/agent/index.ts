@@ -8,11 +8,13 @@ import { buildAdvisorGraph, adviseOnSpending, type LedgerEntry } from "./advisor
 import { OLLAMA_MODEL } from "./llm.ts";
 
 export function createAgents(rootDir: string) {
-  const kb = new FaqKnowledgeBase(path.join(rootDir, "docs", "faq"));
+  // The FAQ, plus BreachMirror AI's security policies (docs/policies, from npm run policies:import)
+  const kb = new FaqKnowledgeBase([path.join(rootDir, "docs", "faq"), path.join(rootDir, "docs", "policies")]);
   const supportGraph = buildSupportGraph(kb);
   const advisorGraph = buildAdvisorGraph(kb);
 
   return {
+    kb,
     status: () => ({ ...kb.status(), localModel: OLLAMA_MODEL || null }),
     chat: (question: string, history: ChatTurn[], lang: string) => answerQuestion(supportGraph, { question, history, lang }),
     advise: (transactions: LedgerEntry[], balance: number, lang: string) => adviseOnSpending(advisorGraph, { transactions, balance, lang }),

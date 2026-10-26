@@ -35,29 +35,21 @@
   --negative: #e5566f;
   --raised: #17171d;
   --control: rgba(255, 255, 255, 0.16);
+  /* Smart Spend & Save: the spending budget in amber, savings in green (after the prototype) */
+  --spend: #edae3a;
+  --spend-soft: #3a2d12;
+  --save: #38b492;
+  --save-soft: #113a2f;
 }
 [data-theme='light'] {
   --positive: #247b50;
   --negative: #c4242a;
   --raised: #f4f4f3;
   --control: rgba(0, 0, 0, 0.16);
-}
-
-/* Monogram tile for a restaurant or hotel without its own photo: a pale tint of its own hue */
-.monogram {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  background: hsl(var(--h) 30% 18%);
-  color: hsl(var(--h) 70% 80%);
-}
-[data-theme='light'] .monogram {
-  background: hsl(var(--h) 70% 92%);
-  color: hsl(var(--h) 55% 26%);
+  --spend: #c98510;
+  --spend-soft: #fbeac4;
+  --save: #0e6b57;
+  --save-soft: #d2ebe3;
 }
 
 .tabular {

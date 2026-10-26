@@ -64,7 +64,7 @@ Prices and crowds are highest during Ramadan, particularly the last ten nights, 
 
 ## How do I order food?
 
-Press "Order Food" in the Services row. You will see five popular restaurants in Lahore with their cuisine, area, delivery time, delivery fee and minimum order. Press a restaurant to open its menu, add dishes with the "Add" button, and adjust quantities with the minus and plus buttons. Your basket, beside the menu (or behind the "View basket" bar on a phone), shows the subtotal, the delivery fee and the total. When the minimum order is reached, press "Place order" to place it.
+Press "Order Food" in the Services row. You will see five popular restaurants in Lahore as photo cards, each with its cuisine, area, delivery time, delivery fee and minimum order. Press a restaurant to open its menu, add dishes with the "Add" button (a small photo flies into your basket to show it was added), and adjust quantities with the minus and plus buttons. Your basket, beside the menu (or behind the "View basket" bar on a phone), shows the subtotal, the delivery fee and the total. When the minimum order is reached, press "Place order" to place it.
 
 ## Which restaurants are available?
 
@@ -81,6 +81,14 @@ The total is the price of every dish in your basket multiplied by its quantity, 
 ## Why can't I place my order yet?
 
 Each restaurant has a minimum order, and the "Place order" button stays disabled until the subtotal of your dishes reaches it. Under the totals, a bar shows how close you are, and a line tells you exactly how much more to add, for example "Add PKR 250 more to place this order". The delivery fee does not count towards the minimum. Once the subtotal reaches it, the line reads "Minimum order reached".
+
+## What do the photos on the restaurant and hotel cards show?
+
+Each card has a cover photo with a short caption that says what it shows: a dish typical of the restaurant's cuisine (such as nihari for Haveli Restaurant), the area or a landmark near each hotel (such as The Mall for Pearl Continental), and each flight's destination (such as the Jeddah Corniche). They are openly licensed photographs from Wikimedia Commons and other open collections, not the venues' own photos; open "Photo credits" at the end of each list to see who took each one and under which licence.
+
+## What is the magnifying circle over the photos?
+
+On a computer, moving the pointer over a cover photo shows a round lens that follows the pointer and magnifies the part of the photo under it, so you can look at a dish or a view more closely. It appears only with a mouse or trackpad, and it is switched off when your device is set to reduce motion.
 
 ## Can I search for a dish?
 
@@ -118,11 +126,11 @@ The Waqf Portfolio is WaqfApp's cart for travel. When you are planning a trip, y
 
 ## How do I add items to my Portfolio?
 
-In Travel, press a hotel or a flight to open its booking panel, choose the check-in date and nights or the number of passengers, and press "Add to portfolio". A notification confirms it. Adding the same hotel with the same check-in date, or the same flight, again increases its nights or passengers instead of creating a duplicate. Trip deals and food orders are booked directly and cannot be added to the Portfolio.
+In Travel, press a hotel or a flight card: it grows into its booking panel, where you choose the check-in date and nights or the number of passengers and press "Add to portfolio". Press the close button or Escape to shrink the panel back into the list. A notification confirms it. Adding the same hotel with the same check-in date, or the same flight, again increases its nights or passengers instead of creating a duplicate. Trip deals and food orders are booked directly and cannot be added to the Portfolio.
 
 ## How do I change or remove items?
 
-Each item in the Portfolio shows its name, its check-in date for a hotel, its rate multiplied by its quantity, and its line total. Use the minus and plus buttons to change a hotel's nights (1 to 14) or a flight's passengers (1 to 6), and press "Remove" to take an item out.
+Each item in the Portfolio shows its name, its check-in date for a hotel, its rate multiplied by its quantity, and its line total. The tabs at the top (All, Hotels and Flights) show every item or only one kind, with how many of each you have. Use the minus and plus buttons to change a hotel's nights (1 to 14) or a flight's passengers (1 to 6), and press "Remove" to take an item out.
 
 ## What is the Portfolio total?
 

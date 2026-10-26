@@ -4,6 +4,7 @@
  * The server prices every order and booking from this data (the browser only sends ids
  * and quantities), and serves it to the app at GET /api/marketplace. All prices are PKR.
  * Menus, rates, fares, fees and times are sample data to confirm with each partner.
+ * Cover photos are in shared/covers.ts, keyed by the same ids.
  */
 
 export type MenuItem = { id: string; name: string; description?: string; price: number };
@@ -17,8 +18,6 @@ export type Restaurant = {
   deliveryMinutes: [number, number];
   deliveryFee: number;
   minOrder: number;
-  /** Optional photo of the restaurant or its food; a monogram is shown without one */
-  image?: string;
   menu: MenuSection[];
 };
 
@@ -28,7 +27,6 @@ export type Hotel = {
   area: string;
   room: string;
   pricePerNight: number;
-  image?: string;
 };
 
 export type Flight = {
@@ -47,7 +45,7 @@ export type Flight = {
   farePerPassenger: number;
 };
 
-export type TripDeal = { id: string; name: string; description: string; price: number; image?: string };
+export type TripDeal = { id: string; name: string; description: string; price: number };
 
 export type Marketplace = { city: string; restaurants: Restaurant[]; hotels: Hotel[]; flights: Flight[]; packages: TripDeal[] };
 
