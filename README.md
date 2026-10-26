@@ -163,7 +163,7 @@ Every variable is optional. They're read from the environment or from a `.env` f
 The **Help Center assistant** and the **Money Helper** are LangGraph agents that run on the server, in `server/agent/`. They don't call any external AI API.
 
 * **Knowledge base**
-  * The FAQ is in `docs/faq/` (10 files, 280 questions).
+  * The FAQ is in `docs/faq/` (10 files, 284 questions).
   * The BreachMirror policies are in `docs/policies/` (57 entries).
   * The full FAQ is also published as a 63-page PDF, [`docs/WaqfApp-FAQ.pdf`](docs/WaqfApp-FAQ.pdf).
 * **Search** combines multilingual embeddings with BM25 keyword matching, so a question in Urdu or Arabic can find an English answer.

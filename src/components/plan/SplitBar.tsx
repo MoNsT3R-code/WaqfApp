@@ -31,7 +31,7 @@ export function SplitBar({ plan, spent, t, size = "md", moving = 0, belowFloor =
   const label = `${t.budgetFact} ${formatPkr(plan.spendLimit)}, ${formatPkr(spent)} spent. ${t.savingsFact} ${formatPkr(plan.savings)}.`;
 
   return (
-    <figure role="img" aria-label={label} className="m-0">
+    <figure role="img" aria-label={label}>
       <div className={cn("relative w-full overflow-hidden rounded-xl bg-[var(--save)]", height)}>
         <motion.div className="absolute inset-y-0 start-0 bg-[var(--spend-soft)]" animate={{ width: `${spendW}%` }} transition={spring} />
         <motion.div className="absolute inset-y-0 start-0 bg-[var(--spend)]" animate={{ width: `${spentW}%` }} transition={spring} />

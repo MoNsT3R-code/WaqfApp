@@ -70,6 +70,22 @@ Your 4-digit PIN is needed for every action that moves money out of your budget 
 
 After a wrong PIN the app tells you how many tries are left. After three wrong tries nothing is done, the attempt is recorded in the audit log, and PIN actions are paused for five minutes. The PIN is stored only as a salted scrypt hash on the server and compared in constant time, so it cannot be read back.
 
+## My PIN doesn't work. Why?
+
+Check that you are typing the 4 digits in the right order on the PIN pad, then try again. The app tells you how many tries are left after each wrong PIN. After three wrong tries PIN actions are paused for five minutes, and even the right PIN is refused until the pause ends, so wait and try again. In this demo the PIN is 2580 unless whoever runs the server set a different one.
+
+## I forgot my PIN. What can I do?
+
+In this demo the PIN is 2580, unless whoever runs the server set a different one with the WAQF_DEMO_PIN setting, so ask them. Nobody can read a PIN back, not even the server, because it is stored only as a scrambled (hashed) value. In a live service you would reset it yourself after proving who you are, for example with a one-time code sent to your registered mobile number. WaqfApp will never ask you to tell it your old PIN.
+
+## How do I change my PIN?
+
+The demo has one shared PIN, so it cannot be changed inside the app. Whoever runs the server can set a different one with the WAQF_DEMO_PIN setting and restart it. A live service would let you change your PIN in the app after entering the current one, and would ask you to choose 4 digits that are not easy to guess, such as 1111, 0000 or your birth year.
+
+## I typed my PIN in a chat message by mistake. What now?
+
+The assistant removes anything that looks like a PIN before searching or saving the conversation, and tells you it did. If the PIN was real, change it as soon as you can, and never send it in a message, email or call again: WaqfApp and its staff will never ask for it.
+
 ## What happens if I tap Confirm twice?
 
 Each confirmation carries a one-time request number, so if the same confirmation reaches the server twice, from a double tap or a retried connection, the second one returns the first result instead of moving money again.
