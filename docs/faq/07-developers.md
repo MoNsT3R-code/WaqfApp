@@ -22,11 +22,11 @@ No. Earlier versions called the Google Gemini API directly from the browser, whi
 
 ## How is the project organised?
 
-server.ts is the Express server: it holds the in-memory data, defines the REST API and serves the React front end through Vite. The React application lives in src: App.tsx starts the session, components/Dashboard.tsx contains the dashboard and all service screens, and translations.ts holds the English, Urdu and Arabic labels. The agent lives in server/agent, and the FAQ that the agent reads lives in docs/faq as Markdown files, one per group of sections. scripts/build_faq_pdf.py builds docs/WaqfApp-FAQ.pdf from those files.
+server.ts is the Express server: it holds the in-memory data, defines the REST API and serves the React front end through Vite. The React application lives in src: App.tsx starts the session, components/Dashboard.tsx contains the dashboard and all service screens, and translations.ts holds the English, Urdu and Arabic labels. The Lahore marketplace (restaurants with their menus, hotels, flights and trip deals) is one data file, shared/marketplace.ts, which the server prices every order and booking from; the Food and Travel screens are in src/components/market. The agent lives in server/agent, and the FAQ that the agent reads lives in docs/faq as Markdown files, one per group of sections. scripts/build_faq_pdf.py builds docs/WaqfApp-FAQ.pdf from those files.
 
 ## Which API endpoints does the server provide?
 
-POST /api/auth/guest starts a session on the demonstration account. With that session token you can call GET /api/dashboard/summary, GET /api/transactions, GET /api/marketplace and GET /api/user/profile; POST /api/transactions/add, /api/transactions/transfer, /api/bills/pay, /api/mobile/load, /api/loans/readycash, /api/bookings/hotel, /api/bookings/flight, /api/food/order and /api/cart/checkout; and the cart and feedback routes. The agent adds POST /api/agent/chat, POST /api/agent/advisor and GET /api/agent/status.
+POST /api/auth/guest starts a session on the demonstration account. With that session token you can call GET /api/dashboard/summary, GET /api/transactions, GET /api/marketplace and GET /api/user/profile; POST /api/transactions/add, /api/transactions/transfer, /api/bills/pay, /api/mobile/load, /api/loans/readycash, /api/bookings/hotel (hotel id, check-in, nights), /api/bookings/flight (flight id, passengers), /api/bookings/package, /api/food/order (restaurant id and dish ids with quantities) and /api/cart/checkout; GET /api/cart and the cart's add, update and remove routes; and the feedback routes. Booking and order routes take ids and quantities only and compute every amount on the server. The agent adds POST /api/agent/chat, POST /api/agent/advisor and GET /api/agent/status.
 
 ## How does the RAG agent work?
 
@@ -62,7 +62,7 @@ The server keeps users, transactions, carts and reviews in JavaScript arrays in 
 
 ## Is the current version ready for production use with real money?
 
-No. It has no real accounts, no persistent storage, no payment provider integration, and the cart routes trust the user ID sent by the browser. Before handling real money you would need proper user accounts with secure authentication, a database, integration with licensed payment partners, server-side validation of every amount, rate limiting, audit logs, and a security review. You would also need to set a strong JWT_SECRET instead of the built-in default.
+No. It has no real accounts, no persistent storage and no payment provider integration. Before handling real money you would need proper user accounts with secure authentication, a database, integration with licensed payment partners, server-side validation of every amount, rate limiting, audit logs, and a security review. You would also need to set a strong JWT_SECRET instead of the built-in default.
 
 ## How do I build the app for production?
 

@@ -2,11 +2,11 @@
 
 ## What is WaqfApp?
 
-WaqfApp is a digital wallet and philanthropy application built around the Islamic idea of Waqf, a charitable endowment whose benefit continues over time. In one place it brings together everyday money tasks (sending money, paying utility bills, topping up a mobile number, ordering food and booking travel) and tools that help you think about giving, saving and spending responsibly. The app shows your balances in Pakistani Rupees (PKR), offers travel options in both Pakistan and Saudi Arabia, and can be used in English, Urdu or Arabic. It also includes a Money Helper that gives short suggestions about your spending, a Help Center assistant that answers questions about the app, and a Private Safe that demonstrates how sensitive notes can be kept encrypted.
+WaqfApp is a digital wallet and philanthropy application built around the Islamic idea of Waqf, a charitable endowment whose benefit continues over time. In one place it brings together everyday money tasks (sending money, paying utility bills, topping up a mobile number, ordering food and booking travel) and tools that help you think about giving, saving and spending responsibly. The app shows your balances in Pakistani Rupees (PKR), offers a local Lahore marketplace of restaurants, hotels and flights, and can be used in English, Urdu or Arabic. It also includes a Money Helper that gives short suggestions about your spending, a Help Center assistant that answers questions about the app, and a Private Safe that demonstrates how sensitive notes can be kept encrypted.
 
 ## Who is WaqfApp designed for?
 
-WaqfApp is designed for individuals and families in Pakistan, and for people travelling between Pakistan and Saudi Arabia, who want a single, simple place to manage day-to-day payments while keeping charitable giving close at hand. It is particularly suited to people planning Umrah or business travel to Makkah, Madina, Jeddah or Riyadh, to households that pay several utility bills each month, and to anyone who wants gentle guidance on budgeting. The interface uses plain language, large controls and a choice of three languages so that it can be used comfortably by people with different levels of experience with technology.
+WaqfApp is designed for individuals and families in Pakistan, particularly in Lahore, who want a single, simple place to manage day-to-day payments while keeping charitable giving close at hand. It is particularly suited to people in Lahore who order food, book hotels or plan Umrah and business travel from the city, to households that pay several utility bills each month, and to anyone who wants gentle guidance on budgeting. The interface uses plain language, large controls and a choice of three languages so that it can be used comfortably by people with different levels of experience with technology.
 
 ## What does the name "Waqf" mean?
 
@@ -26,7 +26,7 @@ From the home screen you can: see your total balance and a chart of how it has c
 
 ## Which countries and currencies does WaqfApp support?
 
-All balances, prices and transactions in WaqfApp are shown in Pakistani Rupees (PKR). The marketplace covers two regions: Pakistan (hotels and restaurants in cities such as Lahore, Karachi, Islamabad, Multan and Faisalabad) and Saudi Arabia (hotels in Makkah, Madina and Jeddah, and flights to Jeddah, Madina and Riyadh). Prices for Saudi hotels and flights are also shown in PKR so that you can compare them directly with your balance. The app does not currently perform currency conversion or hold balances in Saudi Riyals (SAR).
+All balances, prices and transactions in WaqfApp are shown in Pakistani Rupees (PKR). The marketplace is local to Lahore: five Lahore restaurants with full menus, five Lahore hotels, five flights from Lahore to Karachi, Quetta, Dubai, Jeddah and Istanbul, and trip deals for Umrah and Jeddah that start from Lahore. Fares for international flights are also shown in PKR so that you can compare them directly with your balance. The app does not currently perform currency conversion or hold balances in Saudi Riyals (SAR).
 
 ## Which languages is WaqfApp available in?
 
@@ -42,7 +42,7 @@ Yes. The current demonstration version of WaqfApp is free to use and there are n
 
 ## What makes WaqfApp different from other wallet apps?
 
-Three things set WaqfApp apart. First, it is built around Islamic values: the home screen opens with the Bismillah, verses and hadith about continuous charity, and the app treats giving as a core feature rather than an afterthought. Second, it combines daily payments with travel planning for Pakistan and Saudi Arabia, which is useful for pilgrims and frequent travellers. Third, it includes a built-in assistant that answers questions from this FAQ using a retrieval-based agent that runs on the app's own server, so it works without sending your questions to an external AI service.
+Three things set WaqfApp apart. First, it is built around Islamic values: the home screen opens with the Bismillah, verses and hadith about continuous charity, and the app treats giving as a core feature rather than an afterthought. Second, it combines daily payments with a local Lahore marketplace for food, hotels and flights, including flights and packages for Umrah travellers. Third, it includes a built-in assistant that answers questions from this FAQ using a retrieval-based agent that runs on the app's own server, so it works without sending your questions to an external AI service.
 
 ## Who develops and maintains WaqfApp?
 
@@ -90,11 +90,15 @@ Yes. Many people can open the app at once. Each person gets their own session to
 
 ## What is shown on the home screen?
 
-At the top you will see the Bismillah, the WaqfApp logo, and buttons for your Portfolio (cart), Feedback, theme, language and the QR scanner, together with your name. Below that are a Quranic verse and a hadith about continuous charity. The main area shows your Total Balance, the Money Flow Assistant (Money Helper), a row of Services buttons, a Money History Chart, and your Payment History. The left sidebar gives quick access to the main areas and the Log Out button, and the footer links to the Privacy Policy and the Help Center.
+At the top you will see the Bismillah, the WaqfApp logo, and buttons for your Portfolio (cart), Feedback, theme, language and the QR scanner, together with your name. Below that are a Quranic verse and a hadith about continuous charity. The main area shows your Total Balance, the Money Flow Assistant (Money Helper), a row of Services buttons, a Money History Chart, and your Payment History. The left sidebar has shortcuts to Home, Travel, Order Food, your Payment history and the Help Center, with Log Out at the bottom, and the footer links to the Privacy Policy and the Help Center.
 
 ## How is my total balance calculated?
 
 Your total balance is your account's opening balance plus the sum of all transactions recorded against it. Money coming in, such as a Quick Loan disbursement or a positive manual entry, adds to the balance; payments such as bills, transfers, mobile top-ups, bookings and food orders subtract from it. The demonstration account starts with PKR 1,250,500 and includes a few sample transactions (for example a salary credit and a rent payment), which is why the balance you first see is lower than the opening amount.
+
+## What do the inflow and outflow figures under my balance mean?
+
+Inflow is the total of all the money that has come in, such as your salary, Quick Loans and positive manual entries, and outflow is the total of all your payments, such as bills, transfers, bookings and food orders. Both are added up from the entries in your Payment History, so they always match it.
 
 ## Why did my balance change even though I did nothing?
 
@@ -106,11 +110,11 @@ The Money History Chart shows how your balance has moved over recent months. The
 
 ## What do the monthly income, expenses and savings rate figures mean?
 
-These figures describe the demonstration profile: a monthly income of PKR 350,000, monthly expenses of PKR 180,000 and a savings rate of 48 percent. They are illustrative values used to show how a budgeting summary would look; they are not calculated from your transactions in the current version. A credit score and an investment value are also included for the same purpose.
+These figures describe the demonstration profile: a monthly income of PKR 350,000 and monthly expenses of PKR 180,000, which leaves PKR 170,000 a month, a savings rate of 48.6 percent. Press Savings in the Services row to see this breakdown. Income and expenses are illustrative values for the profile and are not calculated from your transactions in the current version; the savings rate is always computed from them, so the figures agree. A credit score and an investment value are also included for the same purpose.
 
 ## Where can I see my full transaction history?
 
-Your recent transactions are listed in the Payment History section of the dashboard, newest first. Each entry shows the merchant or description (for example "KESC Bill - 9PKR-8822" or "Order from Savour Foods"), the category, the date and the amount, with money going out shown as a negative value. Use "See All History" to view the complete list.
+Your recent transactions are listed in the Payment History section of the dashboard, newest first. Each entry shows the merchant or description (for example "KESC Bill - 9PKR-8822" or "Order from Butt Karahi (3 items)"), the category, when it happened (the time for today, "Yesterday", or the date before that) and the amount, with money going out shown with a minus sign. The section shows the six most recent entries; press "See all history" to show every entry and "Show less" to fold the list again. The Payment history icon in the sidebar jumps straight to it.
 
 ## What do the transaction categories mean?
 

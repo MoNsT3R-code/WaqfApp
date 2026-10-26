@@ -29,6 +29,49 @@
   color-scheme: light;
 }
 
+/* Status and surface steps (both themes reach 4.5:1 for text) */
+:root {
+  --positive: #3fc07a;
+  --negative: #e5566f;
+  --raised: #17171d;
+  --control: rgba(255, 255, 255, 0.16);
+}
+[data-theme='light'] {
+  --positive: #247b50;
+  --negative: #c4242a;
+  --raised: #f4f4f3;
+  --control: rgba(0, 0, 0, 0.16);
+}
+
+/* Monogram tile for a restaurant or hotel without its own photo: a pale tint of its own hue */
+.monogram {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  background: hsl(var(--h) 30% 18%);
+  color: hsl(var(--h) 70% 80%);
+}
+[data-theme='light'] .monogram {
+  background: hsl(var(--h) 70% 92%);
+  color: hsl(var(--h) 55% 26%);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scrolling areas that should not show a scrollbar (tab rows, inner lists) */
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;

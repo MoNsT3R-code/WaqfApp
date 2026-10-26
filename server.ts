@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import session from "express-session";
 import cookieParser from "cookie-parser";
 import { createAgents, type ChatTurn } from "./server/agent/index.ts";
+import { lahoreMarketplace, LIMITS, findMenuItem } from "./shared/marketplace.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -89,7 +90,6 @@ async function startServer() {
 
   const advisorFeedback: any[] = [];
   const feedbacks: any[] = [];
-  const carts: Record<string, any[]> = {};
 
   // --- API Routes ---
 
@@ -112,195 +112,234 @@ async function startServer() {
     }
   });
 
+  // Records a ledger entry for the signed-in user
+  const addTransaction = (userId: string, amount: number, merchant: string, category: string) => {
+    const transaction = {
+      id: Math.random().toString(36).substr(2, 9),
+      userId,
+      amount,
+      merchant,
+      category,
+      date: new Date().toISOString()
+    };
+    transactions.unshift(transaction);
+    return transaction;
+  };
+
+  // A positive PKR amount with at most two decimals, or null
+  const parseAmount = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 && n <= 10_000_000 ? Math.round(n * 100) / 100 : null;
+  };
+
+  // A whole count between 1 and max, or null
+  const parseCount = (value: unknown, max: number) => {
+    const n = Number(value);
+    return Number.isInteger(n) && n >= 1 && n <= max ? n : null;
+  };
+
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
   // Feedback: Get All
   app.get("/api/feedback", (req, res) => {
     res.json(feedbacks);
   });
 
-  // Feedback: Add
-  app.post("/api/feedback", (req, res) => {
-    const { userId, username, content, rating } = req.body;
+  // Feedback: Add (author comes from the session, not the request)
+  app.post("/api/feedback", authenticateToken, (req: any, res) => {
+    const user = users.find(u => u.id === req.user.userId);
+    const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+    const rating = parseCount(req.body.rating, 5);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!content || content.length > 1000 || !rating) {
+      return res.status(400).json({ message: "A review needs text (up to 1,000 characters) and a rating from 1 to 5" });
+    }
     const newFeedback = {
       id: Math.random().toString(36).substr(2, 9),
-      userId,
-      username: username || "Anonymous",
+      userId: user.id,
+      username: user.username,
       content,
-      rating: rating || 5,
+      rating,
       date: new Date().toISOString()
     };
     feedbacks.unshift(newFeedback);
     res.json(newFeedback);
   });
 
-  // Feedback: Edit
-  app.put("/api/feedback/:id", (req, res) => {
-    const { id } = req.params;
-    const { content, rating } = req.body;
-    const feedback = feedbacks.find(f => f.id === id);
-    if (feedback) {
-      feedback.content = content;
-      feedback.rating = rating;
-      feedback.date = new Date().toISOString();
-      return res.json(feedback);
+  // Feedback: Edit (only the author's own review)
+  app.put("/api/feedback/:id", authenticateToken, (req: any, res) => {
+    const feedback = feedbacks.find(f => f.id === req.params.id);
+    if (!feedback) return res.status(404).json({ message: "Feedback not found" });
+    if (feedback.userId !== req.user.userId) return res.status(403).json({ message: "You can only edit your own review" });
+    const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+    const rating = parseCount(req.body.rating, 5);
+    if (!content || content.length > 1000 || !rating) {
+      return res.status(400).json({ message: "A review needs text (up to 1,000 characters) and a rating from 1 to 5" });
     }
-    res.status(404).json({ message: "Feedback not found" });
+    feedback.content = content;
+    feedback.rating = rating;
+    feedback.date = new Date().toISOString();
+    res.json(feedback);
   });
 
-  // Cart: Get
-  app.get("/api/cart/:userId", (req, res) => {
-    const { userId } = req.params;
-    res.json(carts[userId] || []);
-  });
+  // Marketplace (Lahore): restaurants with menus, hotels, flights from Lahore, trip deals
+  const marketplace = lahoreMarketplace;
 
-  // Cart: Add
-  app.post("/api/cart/add", (req, res) => {
-    const { userId, item } = req.body;
-    if (!carts[userId]) carts[userId] = [];
-    
-    const existing = carts[userId].find(i => i.id === item.id);
-    if (existing) {
-      existing.quantity = (existing.quantity || 1) + 1;
-    } else {
-      carts[userId].push({ ...item, quantity: 1, cartId: Math.random().toString(36).substr(2, 9) });
-    }
-    res.json(carts[userId]);
-  });
-
-  // Cart: Update/Edit quantity
-  app.put("/api/cart/update", (req, res) => {
-    const { userId, cartId, quantity } = req.body;
-    if (carts[userId]) {
-      const item = carts[userId].find(i => i.cartId === cartId);
-      if (item) {
-        if (quantity <= 0) {
-          carts[userId] = carts[userId].filter(i => i.cartId !== cartId);
-        } else {
-          item.quantity = quantity;
-        }
-      }
-    }
-    res.json(carts[userId] || []);
-  });
-
-  // Cart: Remove
-  app.post("/api/cart/remove", (req, res) => {
-    const { userId, cartId } = req.body;
-    if (carts[userId]) {
-      carts[userId] = carts[userId].filter(item => item.cartId !== cartId);
-    }
-    res.json(carts[userId] || []);
-  });
-
-  // Marketplace
-  const marketplace = {
-    hotels: [
-      // Saudi Arabia
-      { id: "sa1", name: "Fairmont Makkah Clock Royal Tower", location: "Makkah", price: 85000, rating: 4.9, image: "https://picsum.photos/seed/makkah1/400/300", country: "SA" },
-      { id: "sa2", name: "Pullman Zamzam Madina", location: "Madina", price: 65000, rating: 4.8, image: "https://picsum.photos/seed/madina1/400/300", country: "SA" },
-      { id: "sa3", name: "Ritz-Carlton Jeddah", location: "Jeddah", price: 75000, rating: 4.9, image: "https://picsum.photos/seed/jeddah1/400/300", country: "SA" },
-      { id: "sa4", name: "Hilton Makkah Convention", location: "Makkah", price: 55000, rating: 4.7, image: "https://picsum.photos/seed/makkah2/400/300", country: "SA" },
-      // Pakistan
-      { id: "pk1", name: "Pearl Continental", location: "Lahore", price: 25000, rating: 4.8, image: "https://picsum.photos/seed/lahore1/400/300", country: "PK" },
-      { id: "pk2", name: "Serena Hotel", location: "Islamabad", price: 45000, rating: 4.9, image: "https://picsum.photos/seed/islo1/400/300", country: "PK" },
-      { id: "pk3", name: "Movenpick Karachi", location: "Karachi", price: 30000, rating: 4.7, image: "https://picsum.photos/seed/karachi1/400/300", country: "PK" },
-      { id: "pk4", name: "Ramada Multan", location: "Multan", price: 18000, rating: 4.5, image: "https://picsum.photos/seed/multan1/400/300", country: "PK" },
-      { id: "pk5", name: "Faisalabad Serena", location: "Faisalabad", price: 22000, rating: 4.6, image: "https://picsum.photos/seed/fsd1/400/300", country: "PK" }
-    ],
-    restaurants: [
-      { id: "r1", name: "Savour Foods", location: "Islamabad", category: "Pulao", deliveryTime: "25 min", minOrder: 500, rating: 4.7, image: "https://picsum.photos/seed/pulao1/400/300" },
-      { id: "r2", name: "Bundu Khan", location: "Lahore", category: "BBQ", deliveryTime: "40 min", minOrder: 1000, rating: 4.6, image: "https://picsum.photos/seed/bbq1/400/300" },
-      { id: "r3", name: "Kolachi", location: "Karachi", category: "Seafood", deliveryTime: "55 min", minOrder: 2500, rating: 4.9, image: "https://picsum.photos/seed/sea1/400/300" },
-      { id: "r4", name: "Gourmet", location: "Faisalabad", category: "Desi", deliveryTime: "30 min", minOrder: 800, rating: 4.4, image: "https://picsum.photos/seed/desi1/400/300" },
-      { id: "r5", name: "Cafe Bilal", location: "Multan", category: "Cafe", deliveryTime: "35 min", minOrder: 600, rating: 4.5, image: "https://picsum.photos/seed/cafe1/400/300" }
-    ],
-    flights: [
-      { id: "f1", route: "Lahore (LHE) -> Jeddah (JED)", airline: "PIA", price: 125000, date: "2026-05-15", class: "Economy" },
-      { id: "f2", route: "Karachi (KHI) -> Madina (MED)", airline: "Saudi Arabian Airlines", price: 145000, date: "2026-05-18", class: "Business" },
-      { id: "f3", route: "Islamabad (ISB) -> Riyadh (RUH)", airline: "Airblue", price: 110000, date: "2026-05-20", class: "Economy" }
-    ],
-    packages: [
-      { id: "p1", name: "Umrah Luxury Plus", description: "15 Days / Makkah & Madina / Flights included", price: 350000, rating: 4.9, image: "https://picsum.photos/seed/umrah/400/300" },
-      { id: "p2", name: "Jeddah Business Hub", description: "5 Days / 5-Star Hotel / Flights included", price: 210000, rating: 4.7, image: "https://picsum.photos/seed/package2/400/300" }
-    ]
-  };
-
-  // --- API Routes ---
-
-  // Marketplace
   app.get("/api/marketplace", (req, res) => {
     res.json(marketplace);
   });
 
-  // Simulation: Hotel Booking
-  app.post("/api/bookings/hotel", authenticateToken, (req: any, res) => {
-    if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const { hotelName, checkIn, amount } = req.body;
-    const newTransaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: -parseFloat(amount),
-      merchant: `Stay at ${hotelName}`,
-      category: "Travel",
-      date: new Date().toISOString()
-    };
-    transactions.unshift(newTransaction);
-    res.json({ message: "Booking confirmed", transaction: newTransaction });
+  // Portfolio (cart) of hotels and flights; prices come from the marketplace, never the request
+  type CartItem = {
+    cartId: string; type: "Hotel" | "Flight"; itemId: string; name: string;
+    price: number; unit: "night" | "passenger"; quantity: number; checkIn?: string;
+  };
+  const carts: Record<string, CartItem[]> = {};
+  const cartOf = (userId: string) => (carts[userId] ||= []);
+
+  const todayIso = () => new Date().toISOString().slice(0, 10);
+  const parseCheckIn = (value: unknown) =>
+    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(Date.parse(value)) && value >= todayIso() ? value : null;
+
+  app.get("/api/cart", authenticateToken, (req: any, res) => {
+    res.json(cartOf(req.user.userId));
   });
 
-  // Simulation: Flight Booking
-  app.post("/api/bookings/flight", authenticateToken, (req: any, res) => {
-    if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const { flightDetails, amount } = req.body;
-    const newTransaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: -parseFloat(amount),
-      merchant: `Flight ${flightDetails}`,
-      category: "Travel",
-      date: new Date().toISOString()
-    };
-    transactions.unshift(newTransaction);
-    res.json({ message: "Flight booked", transaction: newTransaction });
+  app.post("/api/cart/add", authenticateToken, (req: any, res) => {
+    const { type, itemId } = req.body;
+    const cart = cartOf(req.user.userId);
+    let entry: Omit<CartItem, "cartId" | "quantity"> | null = null;
+    let max = 1;
+
+    if (type === "Hotel") {
+      const hotel = marketplace.hotels.find(h => h.id === itemId);
+      const checkIn = parseCheckIn(req.body.checkIn);
+      if (!hotel || !checkIn) return res.status(400).json({ message: "Choose a hotel and a check-in date from today" });
+      entry = { type, itemId: hotel.id, name: hotel.name, price: hotel.pricePerNight, unit: "night", checkIn };
+      max = LIMITS.nights;
+    } else if (type === "Flight") {
+      const flight = marketplace.flights.find(f => f.id === itemId);
+      if (!flight) return res.status(400).json({ message: "Flight not found" });
+      entry = { type, itemId: flight.id, name: `${flight.airline}, ${flight.from.city} to ${flight.to.city}`, price: flight.farePerPassenger, unit: "passenger" };
+      max = LIMITS.passengers;
+    } else {
+      return res.status(400).json({ message: "Only hotels and flights can be added to the portfolio" });
+    }
+
+    const quantity = parseCount(req.body.quantity ?? 1, max);
+    if (!quantity) return res.status(400).json({ message: `Choose between 1 and ${max}` });
+
+    const existing = cart.find(i => i.type === entry!.type && i.itemId === entry!.itemId && i.checkIn === entry!.checkIn);
+    if (existing) existing.quantity = Math.min(max, existing.quantity + quantity);
+    else cart.push({ ...entry, quantity, cartId: Math.random().toString(36).substr(2, 9) });
+    res.json(cart);
   });
 
-  // Simulation: Settle every item in the portfolio (cart) and empty it
+  // Quantity 0 removes the item
+  app.put("/api/cart/update", authenticateToken, (req: any, res) => {
+    const cart = cartOf(req.user.userId);
+    const item = cart.find(i => i.cartId === req.body.cartId);
+    if (!item) return res.status(404).json({ message: "Item not found" });
+    const max = item.unit === "night" ? LIMITS.nights : LIMITS.passengers;
+    const quantity = Number(req.body.quantity);
+    if (quantity === 0) carts[req.user.userId] = cart.filter(i => i.cartId !== item.cartId);
+    else if (parseCount(quantity, max)) item.quantity = quantity;
+    else return res.status(400).json({ message: `Choose between 1 and ${max}` });
+    res.json(cartOf(req.user.userId));
+  });
+
+  app.post("/api/cart/remove", authenticateToken, (req: any, res) => {
+    carts[req.user.userId] = cartOf(req.user.userId).filter(i => i.cartId !== req.body.cartId);
+    res.json(carts[req.user.userId]);
+  });
+
+  // Settle every item in the portfolio and empty it
   app.post("/api/cart/checkout", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const items = carts[req.user.userId] || [];
+    const items = cartOf(req.user.userId);
     if (items.length === 0) return res.status(400).json({ message: "Portfolio is empty" });
-    const newTransactions = items.map(item => ({
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: -(item.price * (item.quantity || 1)),
-      merchant: item.type === "Hotel" ? `Stay at ${item.name}` : `Flight ${item.route}`,
-      category: "Travel",
-      date: new Date().toISOString()
-    }));
-    transactions.unshift(...newTransactions);
+    const newTransactions = items.map(item =>
+      addTransaction(
+        req.user.userId,
+        -(item.price * item.quantity),
+        item.type === "Hotel"
+          ? `Stay at ${item.name}, ${plural(item.quantity, "night")} from ${item.checkIn}`
+          : `Flight ${item.name}, ${plural(item.quantity, "passenger")}`,
+        "Travel"
+      )
+    );
     carts[req.user.userId] = [];
     res.json({ message: "Portfolio settled", transactions: newTransactions });
   });
 
-  // Simulation: Food Order
-  app.post("/api/food/order", authenticateToken, (req: any, res) => {
+  // Hotel booking: rate × nights
+  app.post("/api/bookings/hotel", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const { restaurantName, amount } = req.body;
-    const newTransaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: -parseFloat(amount),
-      merchant: `Order from ${restaurantName}`,
-      category: "Food",
-      date: new Date().toISOString()
-    };
-    transactions.unshift(newTransaction);
-    res.json({ message: "Order placed", transaction: newTransaction });
+    const hotel = marketplace.hotels.find(h => h.id === req.body.hotelId);
+    const checkIn = parseCheckIn(req.body.checkIn);
+    const nights = parseCount(req.body.nights, LIMITS.nights);
+    if (!hotel || !checkIn || !nights) {
+      return res.status(400).json({ message: `Choose a hotel, a check-in date from today and 1 to ${LIMITS.nights} nights` });
+    }
+    const transaction = addTransaction(req.user.userId, -(hotel.pricePerNight * nights), `Stay at ${hotel.name}, ${plural(nights, "night")} from ${checkIn}`, "Travel");
+    res.json({ message: "Booking confirmed", transaction });
   });
 
-  // User Profile
+  // Flight booking: fare × passengers
+  app.post("/api/bookings/flight", authenticateToken, (req: any, res) => {
+    if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
+    const flight = marketplace.flights.find(f => f.id === req.body.flightId);
+    const passengers = parseCount(req.body.passengers, LIMITS.passengers);
+    if (!flight || !passengers) return res.status(400).json({ message: `Choose a flight and 1 to ${LIMITS.passengers} passengers` });
+    const transaction = addTransaction(
+      req.user.userId,
+      -(flight.farePerPassenger * passengers),
+      `Flight ${flight.from.code} to ${flight.to.code}, ${flight.airline}, ${plural(passengers, "passenger")}`,
+      "Travel"
+    );
+    res.json({ message: "Flight booked", transaction });
+  });
+
+  // Trip deal booking
+  app.post("/api/bookings/package", authenticateToken, (req: any, res) => {
+    if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
+    const deal = marketplace.packages.find(p => p.id === req.body.packageId);
+    if (!deal) return res.status(400).json({ message: "Trip deal not found" });
+    const transaction = addTransaction(req.user.userId, -deal.price, `Trip deal: ${deal.name}`, "Travel");
+    res.json({ message: "Trip deal booked", transaction });
+  });
+
+  // Food order: dishes priced from the menu, minimum order checked, delivery fee added
+  app.post("/api/food/order", authenticateToken, (req: any, res) => {
+    if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
+    const restaurant = marketplace.restaurants.find(r => r.id === req.body.restaurantId);
+    if (!restaurant) return res.status(400).json({ message: "Restaurant not found" });
+    const lines: { name: string; price: number; quantity: number }[] = [];
+    for (const line of Array.isArray(req.body.items) ? req.body.items : []) {
+      const dish = findMenuItem(restaurant, line?.id);
+      const quantity = parseCount(line?.quantity, LIMITS.dishQuantity);
+      if (!dish) return res.status(400).json({ message: "The basket has a dish that is not on the menu" });
+      if (!quantity) return res.status(400).json({ message: `Choose between 1 and ${LIMITS.dishQuantity} of ${dish.name}` });
+      lines.push({ name: dish.name, price: dish.price, quantity });
+    }
+    if (lines.length === 0) return res.status(400).json({ message: "The basket is empty" });
+
+    const subtotal = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
+    if (subtotal < restaurant.minOrder) {
+      return res.status(400).json({ message: `${restaurant.name} has a minimum order of PKR ${restaurant.minOrder.toLocaleString("en-US")}` });
+    }
+    const total = subtotal + restaurant.deliveryFee;
+    const count = lines.reduce((sum, l) => sum + l.quantity, 0);
+    const transaction = addTransaction(req.user.userId, -total, `Order from ${restaurant.name} (${plural(count, "item")})`, "Food");
+    res.json({ message: "Order placed", transaction, subtotal, deliveryFee: restaurant.deliveryFee, total });
+  });
+
+  // User Profile (never the password hash)
   app.get("/api/user/profile", authenticateToken, (req: any, res) => {
     const user = users.find(u => u.id === req.user.userId);
-    res.json(user);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const { password: _, ...profile } = user;
+    res.json(profile);
   });
 
   // Transactions
@@ -319,12 +358,15 @@ async function startServer() {
 
     const userTransactions = req.user.role === "admin" ? transactions : transactions.filter(t => t.userId === req.user.userId);
     const currentBalance = user.balance + userTransactions.reduce((acc, t) => acc + t.amount, 0);
-    
+    const monthlyIncome = user.role === "admin" ? 0 : 350000.00;
+    const monthlyExpenses = user.role === "admin" ? 0 : 180000.00;
+
     res.json({
       totalBalance: currentBalance,
-      monthlyIncome: user.role === "admin" ? 0 : 350000.00,
-      monthlyExpenses: user.role === "admin" ? 0 : 180000.00,
-      savingsRate: 0.48,
+      monthlyIncome,
+      monthlyExpenses,
+      // Computed from the two figures above so the screen's numbers agree
+      savingsRate: monthlyIncome ? (monthlyIncome - monthlyExpenses) / monthlyIncome : 0,
       creditScore: 785,
       investmentValue: 5450000.75,
       performance: [
@@ -336,84 +378,63 @@ async function startServer() {
     });
   });
 
-  // Simulation: Add Transaction
+  // Text fields from forms: trimmed, capped, never empty
+  const parseText = (value: unknown, max = 80) => {
+    const text = typeof value === "string" ? value.trim().slice(0, max) : "";
+    return text || null;
+  };
+
+  const LEDGER_CATEGORIES = ["General", "Shopping", "Food", "Bills", "Income"];
+
+  // Simulation: Add Transaction (Income adds to the balance; other categories are spending)
   app.post("/api/transactions/add", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const { amount, merchant, category } = req.body;
-    const newTransaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: parseFloat(amount),
-      merchant: merchant || "Generic Store",
-      category: category || "General",
-      date: new Date().toISOString()
-    };
-    transactions.unshift(newTransaction);
-    res.json({ message: "Transaction added successfully", transaction: newTransaction });
+    const merchant = parseText(req.body.merchant);
+    const category = LEDGER_CATEGORIES.includes(req.body.category) ? req.body.category : null;
+    const amount = parseAmount(Math.abs(Number(req.body.amount)));
+    if (!merchant || !category || !amount) return res.status(400).json({ message: "Enter a description, a category and an amount above zero" });
+    const transaction = addTransaction(req.user.userId, category === "Income" ? amount : -amount, merchant, category);
+    res.json({ message: "Transaction added successfully", transaction });
   });
 
   // Simulation: Send Money
   app.post("/api/transactions/transfer", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const { amount, to } = req.body;
-    const newTransaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: -parseFloat(amount),
-      merchant: `Transfer to ${to}`,
-      category: "Transfer",
-      date: new Date().toISOString()
-    };
-    transactions.unshift(newTransaction);
-    res.json({ message: "Transfer successful", transaction: newTransaction });
+    const to = parseText(req.body.to);
+    const amount = parseAmount(req.body.amount);
+    if (!to || !amount) return res.status(400).json({ message: "Enter a recipient and an amount above zero" });
+    const transaction = addTransaction(req.user.userId, -amount, `Transfer to ${to}`, "Transfer");
+    res.json({ message: "Transfer successful", transaction });
   });
 
   // Simulation: Utility Bill Payment
   app.post("/api/bills/pay", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const { provider, consumerId, amount } = req.body;
-    const newTransaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: -parseFloat(amount),
-      merchant: `${provider} Bill - ${consumerId}`,
-      category: "Bills",
-      date: new Date().toISOString()
-    };
-    transactions.unshift(newTransaction);
-    res.json({ message: "Bill paid successfully", transaction: newTransaction });
+    const provider = parseText(req.body.provider, 40);
+    const consumerId = parseText(req.body.consumerId, 40);
+    const amount = parseAmount(req.body.amount);
+    if (!provider || !consumerId || !amount) return res.status(400).json({ message: "Enter a provider, a consumer number and an amount above zero" });
+    const transaction = addTransaction(req.user.userId, -amount, `${provider} Bill - ${consumerId}`, "Bills");
+    res.json({ message: "Bill paid successfully", transaction });
   });
 
-  // Simulation: ReadyCash Loan
+  // Simulation: ReadyCash Loan (the pre-approved limit is set here, not by the request)
+  const READY_CASH_LIMIT = 15000;
   app.post("/api/loans/readycash", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const { amount } = req.body;
-    const newTransaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: parseFloat(amount),
-      merchant: "ReadyCash Credit Line",
-      category: "Loan",
-      date: new Date().toISOString()
-    };
-    transactions.unshift(newTransaction);
-    res.json({ message: "Credit limit disbursed", transaction: newTransaction });
+    const transaction = addTransaction(req.user.userId, READY_CASH_LIMIT, "ReadyCash Credit Line", "Loan");
+    res.json({ message: "Credit limit disbursed", transaction });
   });
 
   // Simulation: Mobile Load
   app.post("/api/mobile/load", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
-    const { operator, mobileNumber, amount } = req.body;
-    const newTransaction = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: req.user.userId,
-      amount: -parseFloat(amount),
-      merchant: `${operator} Load - ${mobileNumber}`,
-      category: "Mobile Load",
-      date: new Date().toISOString()
-    };
-    transactions.unshift(newTransaction);
-    res.json({ message: "Top-up successful", transaction: newTransaction });
+    const operator = parseText(req.body.operator, 20);
+    const mobileNumber = parseText(req.body.mobileNumber, 20);
+    const amount = parseAmount(req.body.amount);
+    if (!operator || !mobileNumber || !amount) return res.status(400).json({ message: "Enter an operator, a mobile number and an amount above zero" });
+    const transaction = addTransaction(req.user.userId, -amount, `${operator} Load - ${mobileNumber}`, "Mobile Load");
+    res.json({ message: "Top-up successful", transaction });
   });
 
   // Admin Only: All Emails / Accounts
@@ -464,7 +485,8 @@ async function startServer() {
   // --- Vite / Static Handling ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      // The live-reload socket gets its own port per app port, so two dev servers don't clash on 24678
+      server: { middlewareMode: true, hmr: process.env.DISABLE_HMR === "true" ? false : { port: PORT + 21678 } },
       appType: "spa",
     });
     app.use(vite.middlewares);

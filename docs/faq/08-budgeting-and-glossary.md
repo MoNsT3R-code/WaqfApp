@@ -48,7 +48,7 @@ PKR is the international currency code for the Pakistani Rupee, the currency of 
 
 ## What does SAR mean?
 
-SAR is the currency code for the Saudi Riyal, the currency of Saudi Arabia. WaqfApp lists hotels and flights in Saudi Arabia but shows their prices in PKR. Travellers to Saudi Arabia will need riyals, or a card that can be used there, for spending during their trip.
+SAR is the currency code for the Saudi Riyal, the currency of Saudi Arabia. WaqfApp lists flights from Lahore to Jeddah and Umrah trip deals but shows their prices in PKR. Travellers to Saudi Arabia will need riyals, or a card that can be used there, for spending during their trip.
 
 ## What is IBFT?
 

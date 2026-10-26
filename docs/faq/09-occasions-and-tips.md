@@ -52,7 +52,7 @@ Ask one thing at a time and include the name of the feature or topic, for exampl
 
 ## Can you give some example questions to try?
 
-Try: "How do I send money to Easypaisa?", "Which bill providers are supported?", "What is the minimum order at Kolachi?", "How do I book a flight to Jeddah?", "What is Sadaqah Jariyah?", "How is Zakat calculated?", "Is the Private Safe really encrypted?", "Why did my transactions disappear?", "How do I change the language to Urdu?" and "How do I enable a local language model with Ollama?".
+Try: "How do I send money to Easypaisa?", "Which bill providers are supported?", "What is the minimum order at Butt Karahi?", "How do I book a flight to Jeddah?", "What is Sadaqah Jariyah?", "How is Zakat calculated?", "Is the Private Safe really encrypted?", "Why did my transactions disappear?", "How do I change the language to Urdu?" and "How do I enable a local language model with Ollama?".
 
 ## Why does the assistant sometimes suggest related questions?
 
