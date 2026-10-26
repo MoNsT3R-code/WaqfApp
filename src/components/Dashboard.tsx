@@ -56,8 +56,10 @@ import { translations, Language } from "../translations";
 import { Theme } from "../App";
 import type { Flight, Hotel, Marketplace, Restaurant, TripDeal } from "../../shared/marketplace";
 import { FoodScreen, type Basket } from "./market/FoodScreen";
-import { TravelScreen, countLabel, type TravelTab } from "./market/TravelScreen";
-import { fill, formatDay, formatPkr, Stepper } from "./market/parts";
+import { TravelScreen, type TravelTab } from "./market/TravelScreen";
+import { Stepper } from "./market/parts";
+import { countLabel, fill, formatDay, formatPkr } from "./market/helpers";
+import { AnimatedPkr, MotionTabs, Ripple } from "./market/motionParts";
 
 interface Transaction {
   id: string;
@@ -121,6 +123,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
   const [travelTab, setTravelTab] = useState<TravelTab>("Hotels");
   const [basket, setBasket] = useState<Basket>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [cartTab, setCartTab] = useState<"All" | "Hotel" | "Flight">("All");
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Service form fields (Send Money, Bills, Mobile Load, Add Cash)
@@ -487,7 +490,13 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     handleAction(endpoint, build(amount));
   };
 
-  if (!summary) return null;
+  if (!summary) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Ripple size={72} label={labels.thinking} />
+      </div>
+    );
+  }
 
   // Balance card figures, summed from the ledger shown below
   const inflow = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
@@ -549,14 +558,21 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
 
           <div className="flex flex-wrap items-center gap-4">
             <button 
-              onClick={() => setActiveModal("cart" as any)}
+              onClick={() => setActiveModal("cart")}
+              aria-label={`${labels.portfolio}${cart.length ? ` (${cart.length})` : ""}`}
               className="relative p-3 bg-[var(--border)] border border-[var(--border)] rounded-2xl text-[var(--text-s)] hover:text-[var(--accent)] transition-all group"
             >
               <ShoppingCart className="w-5 h-5 group-hover:scale-110 transition-transform" />
               {cart.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--accent)] text-[var(--bg)] text-[10px] font-bold rounded-full flex items-center justify-center">
+                <motion.span
+                  key={cart.reduce((s, i) => s + i.quantity, 0)}
+                  initial={{ scale: 1.6 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 16 }}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--accent)] text-[var(--bg)] text-[10px] font-bold rounded-full flex items-center justify-center"
+                >
                   {cart.length}
-                </span>
+                </motion.span>
               )}
             </button>
             
@@ -869,11 +885,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                     <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] mb-3 text-[var(--accent)]">{labels.capitalFlow}</h3>
                     <div className="min-h-[80px] flex items-center justify-center px-4">
                       {isAdvisorLoading ? (
-                        <div className="flex gap-1.5 Items-center">
-                          {[0, 1, 2].map(i => (
-                            <div key={i} className="w-1 h-1 bg-[var(--accent)] rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-                          ))}
-                        </div>
+                        <Ripple size={40} label={labels.smartAdvisor} />
                       ) : (
                         <p className="text-[11px] text-[var(--text-s)] leading-relaxed italic">
                           {smartInsight ? `"${smartInsight}"` : "Advisor report pending. Synchronize to view latest data analysis."}
@@ -1041,51 +1053,76 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
 
               {/* Dynamic Modal Forms */}
               <div className={cn(activeModal === "food" || activeModal === "travel" ? "flex-1 min-h-0" : "space-y-6")}>
-                  {activeModal === "cart" && (
-                    <div className="space-y-6">
-                      {cart.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-[var(--control)] px-4 py-3 text-sm text-[var(--text-s)]">{labels.market.portfolioEmpty}</p>
-                      ) : (
-                        <ul>
-                          {cart.map(item => (
-                            <li key={item.cartId} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-[var(--border)] py-4 last:border-b-0">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-[var(--text-p)]">{item.name}</p>
-                                <p className="tabular mt-0.5 text-[13px] text-[var(--text-s)]">
-                                  {item.checkIn ? `${fill(labels.market.checkInOn, { date: formatDay(item.checkIn, lang) })} · ` : ""}
-                                  {fill(labels.market.rateTimes, { rate: formatPkr(item.price), n: item.quantity })}
-                                </p>
-                              </div>
-                              <p className="tabular text-end text-sm font-medium text-[var(--text-p)]">{formatPkr(item.price * item.quantity)}</p>
-                              <div className="flex items-center gap-3">
-                                <Stepper
-                                  size="sm"
-                                  value={item.quantity}
-                                  min={1}
-                                  max={item.unit === "night" ? 14 : 6}
-                                  onChange={q => updateCartQuantity(item.cartId, q)}
-                                  label={item.unit === "night" ? labels.market.nights : labels.market.passengers}
-                                />
-                                <span className="text-[13px] text-[var(--text-s)]">{countLabel(labels.market, item.quantity, item.unit)}</span>
-                              </div>
-                              <button onClick={() => removeFromCart(item.cartId)} className="justify-self-end text-[13px] text-[var(--text-s)] hover:text-[var(--negative)]">{labels.market.remove}</button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {cart.length > 0 && (
-                        <div className="space-y-4 border-t border-[var(--border)] pt-4">
-                          <div className="tabular flex items-baseline justify-between">
-                            <span className="text-sm text-[var(--text-s)]">{labels.market.total}</span>
-                            <span className="text-lg font-semibold text-[var(--text-p)]">{formatPkr(cart.reduce((s, i) => s + i.price * i.quantity, 0))}</span>
+                  {activeModal === "cart" && (() => {
+                    const shown = cart.filter(i => cartTab === "All" || i.type === cartTab);
+                    const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+                    return (
+                      <div className="space-y-5">
+                        <MotionTabs
+                          id="portfolio"
+                          label={labels.portfolio}
+                          active={cartTab}
+                          onChange={id => setCartTab(id as typeof cartTab)}
+                          tabs={[
+                            { id: "All", label: labels.market.all, count: cart.length },
+                            { id: "Hotel", label: labels.market.hotels, count: cart.filter(i => i.type === "Hotel").length },
+                            { id: "Flight", label: labels.market.flights, count: cart.filter(i => i.type === "Flight").length },
+                          ]}
+                        />
+                        {shown.length === 0 ? (
+                          <p className="rounded-lg border border-dashed border-[var(--control)] px-4 py-3 text-sm text-[var(--text-s)]">{labels.market.portfolioEmpty}</p>
+                        ) : (
+                          <ul>
+                            <AnimatePresence initial={false}>
+                              {shown.map(item => (
+                                <motion.li
+                                  key={item.cartId}
+                                  layout
+                                  initial={{ opacity: 0, x: 16 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  exit={{ opacity: 0, x: -16, height: 0 }}
+                                  transition={{ duration: 0.25 }}
+                                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 overflow-hidden border-b border-[var(--border)] py-4 last:border-b-0"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-[var(--text-p)]">{item.name}</p>
+                                    <p className="tabular mt-0.5 text-[13px] text-[var(--text-s)]">
+                                      {item.checkIn ? `${fill(labels.market.checkInOn, { date: formatDay(item.checkIn, lang) })} · ` : ""}
+                                      {fill(labels.market.rateTimes, { rate: formatPkr(item.price), n: item.quantity })}
+                                    </p>
+                                  </div>
+                                  <AnimatedPkr value={item.price * item.quantity} className="text-end text-sm font-medium text-[var(--text-p)]" />
+                                  <div className="flex items-center gap-3">
+                                    <Stepper
+                                      size="sm"
+                                      value={item.quantity}
+                                      min={1}
+                                      max={item.unit === "night" ? 14 : 6}
+                                      onChange={q => updateCartQuantity(item.cartId, q)}
+                                      label={item.unit === "night" ? labels.market.nights : labels.market.passengers}
+                                    />
+                                    <span className="text-[13px] text-[var(--text-s)]">{countLabel(labels.market, item.quantity, item.unit)}</span>
+                                  </div>
+                                  <button onClick={() => removeFromCart(item.cartId)} className="justify-self-end text-[13px] text-[var(--text-s)] hover:text-[var(--negative)]">{labels.market.remove}</button>
+                                </motion.li>
+                              ))}
+                            </AnimatePresence>
+                          </ul>
+                        )}
+                        {cart.length > 0 && (
+                          <div className="space-y-4 border-t border-[var(--border)] pt-4">
+                            <div className="tabular flex items-baseline justify-between">
+                              <span className="text-sm text-[var(--text-s)]">{labels.market.total}</span>
+                              <AnimatedPkr value={total} className="text-lg font-semibold text-[var(--text-p)]" />
+                            </div>
+                            <motion.button whileTap={{ scale: 0.98 }} onClick={checkoutCart} disabled={isProcessing} className="flex h-11 w-full items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-90 disabled:opacity-50">
+                              {isProcessing ? <Ripple size={22} label={labels.market.settle} /> : labels.market.settle}
+                            </motion.button>
                           </div>
-                          <button onClick={checkoutCart} disabled={isProcessing} className="h-11 w-full rounded-full bg-[var(--accent)] text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-90 disabled:opacity-50">
-                            {labels.market.settle}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {activeModal === "feedback_main" as any && (
                     <div className="space-y-8">
@@ -1195,7 +1232,8 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                         </div>
                       ))}
                       {isChatLoading && (
-                        <div className="bg-[var(--card)] border border-[var(--border)] self-start p-4 rounded-3xl rounded-tl-none text-xs text-[var(--text-s)] italic animate-pulse">
+                        <div className="bg-[var(--card)] border border-[var(--border)] self-start p-4 rounded-3xl rounded-tl-none text-xs text-[var(--text-s)] flex items-center gap-3">
+                          <Ripple size={22} label={labels.thinking} />
                           {labels.thinking}
                         </div>
                       )}

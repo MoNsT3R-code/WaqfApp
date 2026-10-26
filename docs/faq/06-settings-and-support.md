@@ -32,6 +32,10 @@ Yes. Your theme choice is saved in your browser's local storage, so the app open
 
 The animated background is a three-dimensional scene drawn with Three.js, a graphics library for the web. It reacts to the selected theme and gives the app its distinctive look. It does not affect any of the app's functions. On older or low-powered devices, the 3D background can make the app feel slower; closing other browser tabs or using a newer browser can help.
 
+## Can I turn off the animations?
+
+WaqfApp follows your device's own setting. When "reduce motion" is switched on (in Windows under Accessibility, Visual effects, Animation effects; on an iPhone under Accessibility, Motion; on Android under Accessibility, Remove animations), the photo lens, the cards rising into place, the photo that flies into the basket and the counting totals are all switched off, and the app shows each result straight away.
+
 ## Can I use WaqfApp on my phone?
 
 Yes. WaqfApp works in mobile browsers. On smaller screens, the left-hand sidebar is hidden to make room for the content, and the dashboard sections stack vertically so that you can scroll through them. For the best experience, use an up-to-date version of Chrome, Safari or Edge.
