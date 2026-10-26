@@ -2,43 +2,43 @@
 
 ## How do I book travel in WaqfApp?
 
-Press "Travel" in the Services row to open the travel marketplace. At the top of the travel window you can switch between three tabs: Hotels, Flights and Trip Deals (packages). Each tab lists the available options with their price in PKR. You can either book an option straight away or add hotels and flights to your Waqf Portfolio to review and settle together later. Every booking is recorded as a "Travel" transaction in your Payment History.
+Press "Travel" in the Services row to open the travel marketplace, which is focused on Lahore. At the top you can switch between three tabs: Hotels (five hotels in Lahore), Flights (five flights departing from Lahore) and Trip deals (two packages from Lahore). Press a hotel or a flight to open its booking panel, where you choose the details, see the total, and either add it to your Waqf Portfolio or book it straight away. Every booking asks you to confirm the amount first and is then recorded as a "Travel" transaction in your Payment History.
 
 ## Which hotels are available?
 
-The Hotels tab lists hotels in Saudi Arabia and Pakistan. In Saudi Arabia: Fairmont Makkah Clock Royal Tower (from PKR 85,000), Pullman Zamzam Madina (from PKR 65,000), Ritz-Carlton Jeddah (from PKR 75,000) and Hilton Makkah Convention (from PKR 55,000). In Pakistan: Pearl Continental Lahore (from PKR 25,000), Serena Hotel Islamabad (from PKR 45,000), Movenpick Karachi (from PKR 30,000), Ramada Multan (from PKR 18,000) and Faisalabad Serena (from PKR 22,000). Each card shows the country, the hotel name, its city, a guest rating and the starting price.
-
-## What does "Starting from" mean on a hotel price?
-
-"Starting from" shows the lowest price for a stay at that hotel, which in the demonstration version is the amount charged when you book. In a real hotel booking service the final price would depend on your dates, the number of nights, the room type and the number of guests, and you would see the full price before confirming.
+The Hotels tab lists five hotels in Lahore, each with its area, its room and its rate per night: Pearl Continental Lahore on The Mall (Deluxe King, breakfast for two, PKR 52,000), Avari Lahore on The Mall (Superior Room, breakfast included, PKR 45,000), The Nishat Hotel in Johar Town (Executive King, breakfast included, PKR 48,000), Faletti's Hotel on Egerton Road (Heritage Room, breakfast included, PKR 36,000) and Ramada by Wyndham Lahore in Gulberg II (Deluxe Room, breakfast included, PKR 26,000).
 
 ## How do I book a hotel?
 
-On the Hotels tab, find the hotel you want and press its booking button. The booking is confirmed immediately: your balance goes down by the hotel's price and a "Stay at [hotel name]" entry appears in your Payment History with the category "Travel". If you would rather decide later, press the add-to-portfolio button instead to save the hotel in your Waqf Portfolio.
+On the Hotels tab, press the hotel you want. Its booking panel opens: choose your check-in date, set the number of nights with the minus and plus buttons, and read the total, which is the rate per night multiplied by the nights (for example PKR 45,000 × 2 = PKR 90,000). Press "Reserve" and confirm. A "Stay at Avari Lahore, 2 nights from ..." entry then appears in your Payment History and your balance goes down by the total. To decide later, press "Add to portfolio" instead.
 
-## Can I choose my check-in and check-out dates?
+## Can I choose my check-in date and number of nights?
 
-Not in the current version. Hotel bookings in the demonstration do not ask for dates, number of nights or room type; booking simply records a single stay at the starting price. Date selection would be part of a live integration with a hotel booking partner.
+Yes. The booking panel has a check-in date, which starts at tomorrow and cannot be set before today, and a nights selector from 1 to 14 nights. The total updates as you change the nights. The server checks the date and the number of nights again before it records the booking, so a past date or more than 14 nights is refused.
 
 ## Which flights are available?
 
-The Flights tab currently lists three routes: Lahore (LHE) to Jeddah (JED) with PIA on 15 May 2026 in Economy for PKR 125,000; Karachi (KHI) to Madina (MED) with Saudi Arabian Airlines on 18 May 2026 in Business for PKR 145,000; and Islamabad (ISB) to Riyadh (RUH) with Airblue on 20 May 2026 in Economy for PKR 110,000. Each card shows the airline, route, date, travel class and price.
+The Flights tab lists five flights from Lahore (LHE), all nonstop and in Economy: AirSial to Karachi (KHI) on 14 November, 07:00 to 08:50, PKR 22,900; PIA to Quetta (UET) on 16 November, 10:30 to 12:10, PKR 27,500; Emirates to Dubai (DXB) on 19 November, 04:15 to 06:35, PKR 78,500; Saudia to Jeddah (JED) on 21 November, 03:10 to 06:45, PKR 135,000; and Turkish Airlines to Istanbul (IST) on 24 November, 06:40 to 11:30, PKR 168,000. Fares are per passenger, one way.
+
+## Why do the arrival times for Dubai, Jeddah and Istanbul look short?
+
+Departure and arrival times are local times at each airport. Dubai is one hour behind Pakistan, and Jeddah and Istanbul are two hours behind, so a flight leaves Lahore at 03:10 and lands in Jeddah at 06:45 local time after 5 hours 35 minutes in the air. The flight duration shown on each row is the real time in the air.
 
 ## How do I book a flight?
 
-On the Flights tab, press "Pay and Book" on the flight you want. A confirmation screen, "Confirm your flight", appears with the route, airline, class, date and total price. Check the details and press "Pay and Book" again to confirm, or "Go Back" to return to the list. Once confirmed, a "Flight [route]" entry appears in your Payment History with the category "Travel" and your balance goes down by the fare.
+On the Flights tab, press the flight you want. Its booking panel opens: set the number of passengers from 1 to 6 and read the total, which is the fare per passenger multiplied by the passengers. Press "Book", check the confirmation, which names the airline, the route, the date, the passengers and the amount, and confirm. A "Flight LHE to JED, Saudia, 2 passengers" entry then appears in your Payment History.
+
+## What baggage is included with each flight?
+
+Each flight row shows its baggage allowance: 20 kg on AirSial to Karachi and PIA to Quetta, 30 kg on Emirates to Dubai and Turkish Airlines to Istanbul, and two pieces of 23 kg on Saudia to Jeddah. Allowances are set by each airline and can change, so check the airline's own conditions before a real journey, particularly on Umrah routes, where many travellers bring Zamzam water home.
 
 ## Will I receive an e-ticket?
 
 Not in the demonstration version: no booking is made with the airline, so no e-ticket or booking reference (PNR) is issued. Do not travel on the basis of a booking made in this version. In a live service, the airline's e-ticket and booking reference would be sent to your email and shown in the app.
 
-## Do flight prices include baggage and taxes?
+## What are Trip deals?
 
-The prices shown are single all-in amounts for demonstration. Real fares are made up of a base fare plus taxes and fees, and baggage allowances vary by airline and class: Economy fares on routes to Saudi Arabia commonly include checked baggage, and Business class usually includes a larger allowance. Always check the airline's conditions before booking a real ticket, particularly for Umrah travel, where many travellers bring Zamzam water home.
-
-## What are Trip Deals?
-
-Trip Deals are complete travel packages. Two are currently available: "Umrah Luxury Plus", 15 days covering Makkah and Madina with flights included, for PKR 350,000; and "Jeddah Business Hub", 5 days in a five-star hotel with flights included, for PKR 210,000. Booking a Trip Deal records a single "Travel" transaction for the package price.
+Trip deals are complete travel packages that start from Lahore. Two are available: "Umrah Luxury Plus", 15 days in Makkah and Madina with return flights from Lahore, for PKR 350,000; and "Jeddah Business Hub", 5 days in a five-star hotel with return flights from Lahore, for PKR 210,000. Press "Book" on a deal and confirm to record it as a single "Travel" transaction for the package price.
 
 ## Does the Umrah package include the visa?
 
@@ -48,9 +48,13 @@ The package description mentions only the destinations, duration and flights. It
 
 Not within the app. In the demonstration version, bookings cannot be cancelled or changed once confirmed, and there is no refund flow. If you booked by mistake, you can add a manual "Income" entry for the same amount through Add Cash to balance your ledger. Live bookings would follow the cancellation policy of the hotel or airline.
 
-## Why are Saudi hotel and flight prices shown in PKR?
+## What is the Tickets button for?
 
-All prices are shown in Pakistani Rupees so that you can compare them directly with your PKR balance and with each other, without doing currency conversions yourself. In a live service the underlying price might be set in Saudi Riyals, and the PKR amount would depend on the exchange rate on the day of payment.
+The Tickets button in the Services row is a shortcut: it opens Travel directly on the Flights tab, so you can book a flight from Lahore in one step. The Travel button opens the same screen on the Hotels tab.
+
+## Are the hotel rates and fares real prices?
+
+They are realistic sample prices for the demonstration, set in Pakistani Rupees. Real hotel rates change with the season, the day of the week and availability, and airfares change with demand and how early you book. In a live service, the price shown would come from the hotel or airline at the moment you book.
 
 ## What is the best time to book Umrah travel?
 
@@ -60,58 +64,78 @@ Prices and crowds are highest during Ramadan, particularly the last ten nights, 
 
 ## How do I order food?
 
-Press "Order Food" in the Services row. You will see a list of partner restaurants, each with its cuisine, city, typical delivery time, minimum order and rating. Use the city buttons at the top to show restaurants in one city only, or "All" to see every restaurant. Press the order button on a restaurant to place an order; an "Order from [restaurant]" entry with the category "Food" appears in your Payment History.
+Press "Order Food" in the Services row. You will see five popular restaurants in Lahore with their cuisine, area, delivery time, delivery fee and minimum order. Press a restaurant to open its menu, add dishes with the "Add" button, and adjust quantities with the minus and plus buttons. Your basket, beside the menu (or behind the "View basket" bar on a phone), shows the subtotal, the delivery fee and the total. When the minimum order is reached, press "Place order" to place it.
 
 ## Which restaurants are available?
 
-Five restaurants are currently listed: Savour Foods in Islamabad (pulao, about 25 minutes, minimum order PKR 500), Bundu Khan in Lahore (BBQ, about 40 minutes, minimum PKR 1,000), Kolachi in Karachi (seafood, about 55 minutes, minimum PKR 2,500), Gourmet in Faisalabad (desi food, about 30 minutes, minimum PKR 800) and Cafe Bilal in Multan (café, about 35 minutes, minimum PKR 600).
+Five Lahore restaurants are listed: Butt Karahi at Lakshmi Chowk (karahi and desi food, 35 to 45 minutes, delivery fee PKR 149, minimum order PKR 1,000); Haveli Restaurant on Fort Road Food Street (Mughlai and desi, 40 to 50 minutes, PKR 199, minimum PKR 1,500); Bundu Khan at Liberty Market, Gulberg (BBQ, 30 to 40 minutes, PKR 129, minimum PKR 800); Cosa Nostra on M.M. Alam Road, Gulberg (pizza and Italian, 30 to 40 minutes, PKR 199, minimum PKR 1,500); and Johnny & Jugnu in DHA (burgers and wraps, 25 to 35 minutes, PKR 99, minimum PKR 600).
+
+## What is on the menus?
+
+Each menu is organised in sections that you can jump between with the tabs at the top. Butt Karahi has chicken, mutton and white karahi in half and full sizes, daal mash, naan, kulcha, lassi and kheer. Haveli Restaurant has mutton nihari, chicken handi, paya, seekh kabab, chicken tikka and a mixed grill, with garlic naan, gulab jamun and kulfi falooda. Bundu Khan has chicken tikka, boti, Bihari kabab, reshmi kabab and mutton chops. Cosa Nostra has pizzas, pasta, garlic bread and tiramisu. Johnny & Jugnu has burgers, wraps, fries and wings.
 
 ## How much does a food order cost?
 
-The demonstration version places a standard order rather than letting you choose individual dishes. A standard order costs PKR 1,500, or the restaurant's minimum order value if that is higher; for example, an order from Kolachi costs PKR 2,500. The amount is deducted from your balance as soon as you place the order.
+The total is the price of every dish in your basket multiplied by its quantity, plus the restaurant's delivery fee. For example, one Daal Mash (PKR 750) and two half Chicken Karahis (PKR 1,850 each) from Butt Karahi come to a subtotal of PKR 4,450, plus the PKR 149 delivery fee, for a total of PKR 4,599. The basket shows each line, the subtotal, the delivery fee and the total before you order.
 
-## Can I choose dishes or add special instructions?
+## Why can't I place my order yet?
 
-Not yet. Menus, dish selection, quantities and special instructions (such as "less spicy" or "no onions") are not part of the current version. Each press of the order button places one standard order from that restaurant.
+Each restaurant has a minimum order, and the "Place order" button stays disabled until the subtotal of your dishes reaches it. Under the totals, a bar shows how close you are, and a line tells you exactly how much more to add, for example "Add PKR 250 more to place this order". The delivery fee does not count towards the minimum. Once the subtotal reaches it, the line reads "Minimum order reached".
+
+## Can I search for a dish?
+
+Yes. The search box above the restaurant list finds restaurants by name, cuisine or area, and also searches every menu: type "nihari", "pizza" or "kheer" and you will see which restaurants serve it, with the matching dishes listed under the restaurant's name. Press the restaurant to open its menu.
+
+## Can I order from two restaurants at once?
+
+No. Like most delivery apps, a basket holds dishes from one restaurant, because each order is delivered by that restaurant. If you add a dish from a different restaurant, the app asks whether to start a new basket; confirming clears the old basket and starts a new one with the dish you added.
+
+## Is my basket kept if I close the food screen?
+
+Yes. Your basket stays while the app is open, so you can close the food screen, check your balance and come back to finish your order. It is cleared when you place the order, when you start a basket at another restaurant, or when you reload the page.
 
 ## What does the delivery time mean?
 
-The delivery time on each restaurant card, for example "25 min" for Savour Foods, is the restaurant's typical time from order to delivery. In the demonstration version no food is actually prepared or delivered, so the time is for information only.
+The delivery time on each restaurant, for example "35–45 min" for Butt Karahi, is the restaurant's typical time from order to delivery. In the demonstration version no food is actually prepared or delivered, so the time is for information only.
+
+## Can I add special instructions to my order?
+
+Not yet. Special instructions (such as "less spicy" or "no onions"), dish options and delivery addresses are not part of the current version. The menu, quantities and the total are.
 
 ## Is the food halal?
 
-All the listed restaurants operate in Pakistan, where food served in mainstream restaurants is generally halal. WaqfApp does not independently certify restaurants. If halal certification matters to you, check with the restaurant or look for certification from a recognised authority such as the Punjab Halal Development Agency.
+All the listed restaurants operate in Lahore, where food served in mainstream restaurants is generally halal. WaqfApp does not independently certify restaurants. If halal certification matters to you, check with the restaurant or look for certification from a recognised authority such as the Punjab Halal Development Agency.
 
-## Can I order food in Saudi Arabia through WaqfApp?
+## Are the menus and prices the restaurants' real menus?
 
-No. Food ordering currently covers restaurants in Pakistan only. Saudi Arabia is covered by the hotel, flight and Trip Deal listings.
+No. The restaurants are well-known Lahore names, but the menus, prices, delivery fees and times in the demonstration are realistic samples, not the restaurants' official menus. A live service would load each restaurant's own menu and prices from the restaurant or the delivery partner.
 
 # Your Waqf Portfolio (Cart)
 
 ## What is the Waqf Portfolio?
 
-The Waqf Portfolio is WaqfApp's shopping cart for travel. When you see a hotel or a flight you are interested in, you can add it to your Portfolio instead of booking it straight away. Open the Portfolio with the cart icon at the top of the dashboard to see everything you have saved, change quantities, remove items, see the total value and settle everything in one step.
+The Waqf Portfolio is WaqfApp's cart for travel. When you are planning a trip, you can add hotels and flights to your Portfolio instead of booking each one straight away, then review them together and pay for everything in one step. Open it with the cart icon at the top of the dashboard.
 
 ## How do I add items to my Portfolio?
 
-On the Travel screen, press the add-to-portfolio button on a hotel or a flight. A notification confirms that the item was added. If you add the same item again, its quantity goes up by one instead of creating a duplicate entry. Trip Deals and food orders cannot be added to the Portfolio; they are booked directly.
+In Travel, press a hotel or a flight to open its booking panel, choose the check-in date and nights or the number of passengers, and press "Add to portfolio". A notification confirms it. Adding the same hotel with the same check-in date, or the same flight, again increases its nights or passengers instead of creating a duplicate. Trip deals and food orders are booked directly and cannot be added to the Portfolio.
 
-## How do I change quantities or remove items?
+## How do I change or remove items?
 
-Open your Portfolio from the cart icon. Each item has minus and plus buttons beside its quantity: press plus to add another of the same item (for example a second room or a second seat) and minus to reduce it. Reducing the quantity to zero removes the item. You can also press the bin icon to remove an item completely.
+Each item in the Portfolio shows its name, its check-in date for a hotel, its rate multiplied by its quantity, and its line total. Use the minus and plus buttons to change a hotel's nights (1 to 14) or a flight's passengers (1 to 6), and press "Remove" to take an item out.
 
-## What is "Total Portfolio Value"?
+## What is the Portfolio total?
 
-Total Portfolio Value is the sum of every item's price multiplied by its quantity. For example, two nights' worth of Ramada Multan at PKR 18,000 plus one Lahore to Jeddah flight at PKR 125,000 gives a total of PKR 161,000. It updates as soon as you change a quantity or remove an item.
+The total is the sum of every item's rate multiplied by its quantity. For example, two Saudia seats to Jeddah at PKR 135,000 and two nights at Avari Lahore at PKR 45,000 come to PKR 270,000 + PKR 90,000 = PKR 360,000. It updates as soon as you change a quantity or remove an item.
 
 ## How do I pay for everything in my Portfolio?
 
-Press "Initialize Settlement" at the bottom of the Portfolio. Every item is booked at once: a "Travel" transaction is created for each item (its price multiplied by its quantity), your balance goes down by the Total Portfolio Value, the Portfolio is emptied and a success notification appears. If the Portfolio is empty, there is nothing to settle.
+Press "Pay for everything" at the bottom of the Portfolio. Every item is booked at once: a "Travel" transaction is created for each item, your balance goes down by the total, the Portfolio is emptied and a notification confirms it.
 
 ## Is my Portfolio saved if I close the app?
 
-Yes, for as long as the server keeps running. The Portfolio is stored on the server rather than in your browser, so you can close the page, open it again later and find the same items. It is cleared when you settle it or when the server restarts. Because the demonstration account is shared, other people using the same copy of the app share the same Portfolio.
+Yes, for as long as the server keeps running. The Portfolio is stored on the server rather than in your browser, so you can close the page, open it again later and find the same items. It is cleared when you pay for it or when the server restarts. Because the demonstration account is shared, other people using the same copy of the app share the same Portfolio.
 
 ## Why is it called a "Waqf" Portfolio?
 
-The name reflects the app's aim of bringing intention to spending: thinking of purchases, particularly journeys such as Umrah, as part of a considered plan rather than impulse buys. Planning trips together, comparing their total cost against your balance, and settling them in one step helps you budget, which leaves more room for giving.
+The name reflects the app's aim of bringing intention to spending: thinking of purchases, particularly journeys such as Umrah, as part of a considered plan rather than impulse buys. Planning trips together, comparing their total cost against your balance, and paying for them in one step helps you budget, which leaves more room for giving.

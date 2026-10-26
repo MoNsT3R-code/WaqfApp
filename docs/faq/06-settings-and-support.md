@@ -120,9 +120,13 @@ No. The QR scanner screen in the current version is a preview: it shows the scan
 
 This was a bug in an earlier version, in which those forms submitted fixed example values instead of your entries. It has been fixed: the forms now submit exactly what you type and select. If you still see the old behaviour, do a hard refresh to load the latest version of the app.
 
-## Flight bookings or "Initialize Settlement" did nothing. Why?
+## Flight bookings or the Portfolio's pay button did nothing. Why?
 
-These were bugs in an earlier version: flight bookings were sent to a server route that did not exist, and the "Initialize Settlement" button in the Portfolio had no action. Both now work: confirmed flights are recorded as Travel transactions, and settling the Portfolio books every item and empties it. Do a hard refresh if you still see the old behaviour.
+These were bugs in an earlier version: flight bookings were sent to a server route that did not exist, and the Portfolio's settlement button had no action. Both now work: flights are booked from the Flights tab after you confirm, and the Portfolio's "Pay for everything" button books every item and empties it. Do a hard refresh if you still see the old behaviour.
+
+## The Tickets, Savings, Add Money or sidebar buttons did nothing. Why?
+
+These were buttons without an action in an earlier version. Tickets now opens Travel on the Flights tab, Savings shows your monthly savings breakdown, Add Money on the balance card opens Add Cash, and the sidebar icons go to Home, Travel, Order Food, your Payment history and the Help Center.
 
 ## How do I report a bug?
 

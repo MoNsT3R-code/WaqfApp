@@ -54,6 +54,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { formatCurrency, cn } from "../lib/utils";
 import { translations, Language } from "../translations";
 import { Theme } from "../App";
+import type { Flight, Hotel, Marketplace, Restaurant, TripDeal } from "../../shared/marketplace";
+import { FoodScreen, type Basket } from "./market/FoodScreen";
+import { TravelScreen, countLabel, type TravelTab } from "./market/TravelScreen";
+import { fill, formatDay, formatPkr, Stepper } from "./market/parts";
 
 interface Transaction {
   id: string;
@@ -73,15 +77,23 @@ interface Summary {
   performance: { month: string; balance: number }[];
 }
 
-interface MarketplaceData {
-  hotels: { id: string; name: string; location: string; price: number; rating: number; image: string; country: string }[];
-  restaurants: { id: string; name: string; location: string; category: string; deliveryTime: string; minOrder: number; rating: number; image: string }[];
-  flights: { id: string; route: string; airline: string; price: number; date: string; class: string }[];
-  packages: { id: string; name: string; description: string; price: number; rating: number; image: string }[];
-}
+type MarketplaceData = Marketplace;
 
-type ModalType = "add_tx" | "transfer" | "bill" | "load" | "loan" | "qr" | "travel" | "food" | "vault" | "privacy" | "help" | "flight_confirm" | null;
-type TravelTab = "Hotels" | "Flights" | "Packages";
+type ModalType = "add_tx" | "transfer" | "bill" | "load" | "loan" | "qr" | "travel" | "food" | "vault" | "privacy" | "help" | "savings" | "cart" | "feedback_main" | null;
+type CartItem = { cartId: string; type: "Hotel" | "Flight"; itemId: string; name: string; price: number; unit: "night" | "passenger"; quantity: number; checkIn?: string };
+
+// Ledger rows: the time today, "Yesterday" and the date before that
+const ledgerWhen = (iso: string, yesterday: string) => {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days <= 0) return time;
+  if (days === 1) return `${yesterday} ${time}`;
+  return `${d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} ${time}`;
+};
+const LEDGER_PREVIEW = 6;
+// Balance and ledger money: thousands separators and always two decimals
+const money2 = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { onLogout: () => void, lang: Language, setLang: (l: Language) => void, theme: Theme, setTheme: (t: Theme) => void, user: any }) => {
   const labels = translations[lang];
@@ -104,13 +116,11 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
   const [vaultMessage, setVaultMessage] = useState<string>("Initializing secure environment...");
   const [isVaultEncrypted, setIsVaultEncrypted] = useState(true);
 
-  // Flight Booking State
-  const [pendingFlight, setPendingFlight] = useState<{ route: string; airline: string; price: number; date: string; class: string } | null>(null);
-
   // Modal & Tab State
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [travelTab, setTravelTab] = useState<TravelTab>("Hotels");
-  const [foodCity, setFoodCity] = useState<string>("All");
+  const [basket, setBasket] = useState<Basket>(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Service form fields (Send Money, Bills, Mobile Load, Add Cash)
@@ -123,12 +133,13 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
   const fieldValue = (name: string, options?: string[]) => (form[name] ?? options?.[0] ?? "").trim();
 
   // Cart & Feedback State
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [userFeedbacks, setUserFeedbacks] = useState<any[]>([]);
   const [newFeedback, setNewFeedback] = useState({ content: "", rating: 5 });
   const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const [confirmData, setConfirmData] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [confirmData, setConfirmData] = useState<{ message: string; onConfirm: () => void; confirmLabel?: string; danger?: boolean } | null>(null);
+  const askToConfirm = (message: string, onConfirm: () => void, confirmLabel?: string) => setConfirmData({ message, onConfirm, confirmLabel });
 
   useEffect(() => {
     if (notification) {
@@ -163,7 +174,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
 
   const fetchCart = async () => {
     try {
-      const res = await fetch(`/api/cart/${user.id}`, {
+      const res = await fetch("/api/cart", {
         headers: { "Authorization": `Bearer ${localStorage.getItem("waqf_token")}` }
       });
       const data = await res.json();
@@ -179,7 +190,8 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     } catch (e) {}
   };
 
-  const addToCart = async (item: any) => {
+  // Hotels carry their check-in and nights, flights their passengers; the server prices them
+  const addToCart = async (payload: { type: "Hotel" | "Flight"; itemId: string; quantity: number; checkIn?: string }) => {
     if (isAdmin) {
       showNotification("Admin cannot add to portfolio", "error");
       return;
@@ -187,16 +199,19 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     try {
       const res = await fetch("/api/cart/add", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${localStorage.getItem("waqf_token")}`
         },
-        body: JSON.stringify({ userId: user.id, item })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
+      if (!res.ok) return showNotification(data.message || "Could not add to portfolio", "error");
       setCart(data);
-      showNotification("Item added to Waqf Portfolio");
-    } catch (e) {}
+      showNotification(labels.market.addedToPortfolio);
+    } catch (e) {
+      showNotification("System interruption", "error");
+    }
   };
 
   const updateCartQuantity = async (cartId: string, quantity: number) => {
@@ -208,7 +223,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
           "Content-Type": "application/json",
           "Authorization": `Bearer ${localStorage.getItem("waqf_token")}`
         },
-        body: JSON.stringify({ userId: user.id, cartId, quantity })
+        body: JSON.stringify({ cartId, quantity })
       });
       const data = await res.json();
       setCart(data);
@@ -224,7 +239,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
           "Content-Type": "application/json",
           "Authorization": `Bearer ${localStorage.getItem("waqf_token")}`
         },
-        body: JSON.stringify({ userId: user.id, cartId })
+        body: JSON.stringify({ cartId })
       });
       const data = await res.json();
       setCart(data);
@@ -233,8 +248,42 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
   };
 
   const checkoutCart = async () => {
-    await handleAction("/api/cart/checkout", {});
+    await handleAction("/api/cart/checkout", {}, "Portfolio settled");
     fetchCart();
+  };
+
+  // --- Lahore marketplace: bookings and orders, confirmed first, priced by the server ---
+  const t = labels.market;
+
+  const bookHotel = (hotel: Hotel, checkIn: string, nights: number) => {
+    const amount = formatPkr(hotel.pricePerNight * nights);
+    askToConfirm(
+      fill(t.confirmHotel, { name: hotel.name, nights: countLabel(t, nights, "night"), date: formatDay(checkIn, lang), amount }),
+      () => handleAction("/api/bookings/hotel", { hotelId: hotel.id, checkIn, nights }, fill(t.booked, { name: hotel.name })),
+      t.reserve
+    );
+  };
+
+  const bookFlight = (flight: Flight, passengers: number) => {
+    const amount = formatPkr(flight.farePerPassenger * passengers);
+    askToConfirm(
+      fill(t.confirmFlight, { airline: flight.airline, from: flight.from.city, to: flight.to.city, date: formatDay(flight.date, lang), passengers: countLabel(t, passengers, "passenger"), amount }),
+      () => handleAction("/api/bookings/flight", { flightId: flight.id, passengers }, fill(t.booked, { name: `${flight.from.code} → ${flight.to.code}` })),
+      t.book
+    );
+  };
+
+  const bookDeal = (deal: TripDeal) => {
+    askToConfirm(
+      fill(t.confirmDeal, { name: deal.name, amount: formatPkr(deal.price) }),
+      () => handleAction("/api/bookings/package", { packageId: deal.id }, fill(t.booked, { name: deal.name })),
+      t.book
+    );
+  };
+
+  const placeFoodOrder = async (restaurant: Restaurant, items: { id: string; quantity: number }[]) => {
+    const ok = await handleAction("/api/food/order", { restaurantId: restaurant.id, items }, fill(t.orderPlaced, { name: restaurant.name }));
+    if (ok) setBasket(null);
   };
 
   const startEditingFeedback = (f: any) => {
@@ -249,14 +298,15 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     }
     try {
       if (editingFeedbackId) {
-        await fetch(`/api/feedback/${editingFeedbackId}`, {
+        const res = await fetch(`/api/feedback/${editingFeedbackId}`, {
           method: "PUT",
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${localStorage.getItem("waqf_token")}`
           },
           body: JSON.stringify(newFeedback)
         });
+        if (!res.ok) return showNotification((await res.json()).message || "Could not update the review", "error");
         showNotification("Feedback updated");
       } else {
         await fetch("/api/feedback", {
@@ -283,6 +333,8 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
       return;
     }
     setConfirmData({
+      danger: true,
+      confirmLabel: "Delete account",
       message: "Are you sure you want to PERMANENTLY delete your account? This action cannot be undone.",
       onConfirm: async () => {
         try {
@@ -391,16 +443,17 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
     }
   };
 
-  const handleAction = async (endpoint: string, data: any) => {
+  // Posts an action; closes the modal and refreshes on success. Returns whether it succeeded.
+  const handleAction = async (endpoint: string, data: any, successMessage = "Operation completed successfully") => {
     if (isAdmin) {
       showNotification("Admin is read-only", "error");
-      return;
+      return false;
     }
     setIsProcessing(true);
     try {
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${localStorage.getItem("waqf_token")}`
         },
@@ -409,13 +462,16 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
       if (res.ok) {
         setActiveModal(null);
         await fetchData();
-        showNotification("Operation completed successfully");
-      } else {
-        showNotification("Request could not be completed", "error");
+        showNotification(successMessage);
+        return true;
       }
+      const body = await res.json().catch(() => ({}));
+      showNotification(body.message || "Request could not be completed", "error");
+      return false;
     } catch (err) {
       console.error("Action Error:", err);
       showNotification("System interruption", "error");
+      return false;
     } finally {
       setIsProcessing(false);
     }
@@ -433,6 +489,10 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
 
   if (!summary) return null;
 
+  // Balance card figures, summed from the ledger shown below
+  const inflow = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const outflow = -transactions.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0);
+
   return (
     <div className="flex min-h-screen">
       {/* Sidebar Navigation */}
@@ -440,17 +500,33 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
         <div className="w-10 h-10 bg-gradient-to-br from-[var(--accent)] to-[#0066ff] rounded-[18px] flex items-center justify-center shadow-[0_0_20px_var(--accent-glow)] transition-all hover:scale-105 group cursor-pointer">
           <HelpingHand className="w-6 h-6 text-[var(--bg)] transition-transform group-hover:-rotate-12" />
         </div>
-        <div className="w-6 h-6 bg-[var(--accent)] rounded flex items-center justify-center cursor-pointer shadow-[0_0_10px_var(--accent-glow)]"><Wallet className="w-4 h-4 text-[var(--bg)]" /></div>
-        <div className="w-6 h-6 bg-[var(--border)] rounded flex items-center justify-center opacity-60 hover:opacity-100 hover:bg-[var(--border)] transition-all cursor-pointer"><Building2 className="w-4 h-4 text-[var(--text-p)]" /></div>
-        <div className="w-6 h-6 bg-[var(--border)] rounded flex items-center justify-center opacity-60 hover:opacity-100 hover:bg-[var(--border)] transition-all cursor-pointer"><Cpu className="w-4 h-4 text-[var(--text-p)]" /></div>
-        <div className="w-6 h-6 bg-[var(--border)] rounded flex items-center justify-center opacity-60 hover:opacity-100 hover:bg-[var(--border)] transition-all cursor-pointer"><PieChart className="w-4 h-4 text-[var(--text-p)]" /></div>
-        <div className="w-6 h-6 bg-[var(--border)] rounded flex items-center justify-center opacity-60 hover:opacity-100 hover:bg-[var(--border)] transition-all cursor-pointer"><TrendingUp className="w-4 h-4 text-[var(--text-p)]" /></div>
-        <div 
+        {[
+          { label: t.navHome, icon: Wallet, onClick: () => window.scrollTo({ top: 0, behavior: "smooth" }) },
+          { label: labels.travel, icon: Plane, onClick: () => { setTravelTab("Hotels"); setActiveModal("travel"); } },
+          { label: labels.food, icon: Utensils, onClick: () => setActiveModal("food") },
+          { label: t.navHistory, icon: Receipt, onClick: () => { setShowAllHistory(true); document.getElementById("ledger")?.scrollIntoView({ behavior: "smooth" }); } },
+          { label: labels.helpCenter, icon: MessageSquare, onClick: () => setActiveModal("help") },
+        ].map(({ label, icon: Icon, onClick }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={onClick}
+            aria-label={label}
+            title={label}
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text-s)] hover:text-[var(--text-p)] hover:bg-[var(--border)] transition-colors focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+          >
+            <Icon className="w-4 h-4" />
+          </button>
+        ))}
+        <button
+          type="button"
           onClick={onLogout}
-          className="mt-auto mb-4 w-6 h-6 bg-red-500/10 rounded flex items-center justify-center opacity-60 hover:opacity-100 hover:bg-red-500/20 transition-all cursor-pointer"
+          aria-label={labels.logout}
+          title={labels.logout}
+          className="mt-auto mb-4 w-9 h-9 rounded-lg flex items-center justify-center text-[var(--negative)] hover:bg-[var(--border)] transition-colors focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
         >
-          <LogOut className="w-4 h-4 text-red-500" />
-        </div>
+          <LogOut className="w-4 h-4" />
+        </button>
       </nav>
 
       {/* Main Content */}
@@ -595,21 +671,21 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                 <div className="flex justify-between items-start mb-6">
                   <span className="text-xs text-[var(--text-s)] uppercase tracking-[0.2em]">{labels.balance}</span>
                   <div className="flex gap-2">
-                    <button className="px-3 py-1 bg-[var(--border)] border border-[var(--border)] rounded-full text-[9px] uppercase tracking-widest text-[var(--accent)]">Add Money</button>
+                    <button onClick={() => setActiveModal("add_tx")} className="px-3 py-1 bg-[var(--border)] border border-[var(--border)] rounded-full text-[9px] uppercase tracking-widest text-[var(--accent)] hover:text-[var(--text-p)] transition-colors">{labels.addMoney}</button>
                   </div>
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-xl font-extralight text-[var(--text-s)]">PKR</span>
-                  <span className="text-5xl md:text-6xl font-light tracking-tighter tabular-nums text-[var(--text-p)]">{summary.totalBalance.toLocaleString()}</span>
+                  <span className="text-5xl md:text-6xl font-light tracking-tighter tabular-nums text-[var(--text-p)]">{money2(summary.totalBalance)}</span>
                 </div>
                 <div className="mt-8 flex gap-6 text-[10px] uppercase tracking-[0.1em] text-[var(--text-s)]">
                   <div className="flex items-center gap-2">
-                    <div className="w-1 h-1 bg-[#00ffaa] rounded-full" />
-                    <span>Inflow: +45.2k</span>
+                    <div className="w-1 h-1 bg-[var(--positive)] rounded-full" />
+                    <span className="tabular">Inflow: +{money2(inflow)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-1 h-1 bg-red-400 rounded-full" />
-                    <span>Outflow: -12.8k</span>
+                    <span className="tabular">Outflow: −{money2(outflow)}</span>
                   </div>
                 </div>
               </div>
@@ -620,7 +696,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
             {/* Service Grid */}
             <section className="space-y-4">
               <h2 className="text-[10px] font-bold text-[var(--text-s)] uppercase tracking-[0.3em] px-2">{labels.primaryServices}</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                 <QuickAction 
                   icon={<ArrowRightLeft className="w-6 h-6" />} 
                   label={labels.transfer} 
@@ -641,8 +717,8 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                 />
                 <QuickAction 
                   icon={<Plane className="w-6 h-6" />} 
-                  label={labels.travel} 
-                  onClick={() => setActiveModal("travel")}
+                  label={labels.travel}
+                  onClick={() => { setTravelTab("Hotels"); setActiveModal("travel"); }}
                   delay={0.4}
                 />
                 <QuickAction 
@@ -665,14 +741,14 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                 />
                 <QuickAction 
                   icon={<Ticket className="w-6 h-6" />} 
-                  label={labels.tickets} 
-                  onClick={() => {}}
+                  label={labels.tickets}
+                  onClick={() => { setTravelTab("Flights"); setActiveModal("travel"); }}
                   delay={0.8}
                 />
                 <QuickAction 
                   icon={<TrendingUp className="w-6 h-6" />} 
-                  label={labels.savings} 
-                  onClick={() => {}}
+                  label={labels.savings}
+                  onClick={() => setActiveModal("savings")}
                   delay={0.9}
                 />
                 <QuickAction 
@@ -696,7 +772,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                 </div>
               </div>
               <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 220 }}>
                   <AreaChart data={summary.performance}>
                     <defs>
                       <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
@@ -828,13 +904,13 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
             </motion.section>
 
             {/* Transaction Ledger */}
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-[28px] overflow-hidden flex flex-col shadow-xl">
+            <div id="ledger" className="bg-[var(--card)] border border-[var(--border)] rounded-[28px] overflow-hidden flex flex-col shadow-xl">
                <div className="p-6 border-b border-[var(--border)] flex justify-between items-center bg-[var(--border)]">
                   <span className="text-[10px] font-bold text-[var(--text-s)] uppercase tracking-[0.2em]">{labels.liveLedger}</span>
                   <Activity className="w-3 h-3 text-[var(--accent)] animate-pulse" />
                </div>
-               <div className="divide-y divide-[var(--border)] overflow-y-auto max-h-[440px] scrollbar-hide">
-                  {transactions.map((t) => (
+               <div className="divide-y divide-[var(--border)]">
+                  {(showAllHistory ? transactions : transactions.slice(0, LEDGER_PREVIEW)).map((t) => (
                     <motion.div 
                       key={t.id} 
                       initial={{ opacity: 0 }}
@@ -846,18 +922,26 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-medium text-[var(--text-p)] truncate">{t.merchant}</p>
-                        <p className="text-[9px] text-[var(--text-s)] uppercase tracking-wide">{t.category} • {new Date(t.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className="text-[9px] text-[var(--text-s)] uppercase tracking-wide">{t.category} • {ledgerWhen(t.date, labels.market.yesterday)}</p>
                       </div>
                       <div className="text-right">
-                        <p className={cn("text-[13px] font-bold tabular-nums", t.amount > 0 ? "text-[#00ffaa]" : "text-[var(--text-p)]")}>
-                          {t.amount > 0 ? "+" : "-"}{Math.abs(t.amount).toLocaleString()}
+                        <p className={cn("text-[13px] font-bold tabular-nums", t.amount > 0 ? "text-[var(--positive)]" : "text-[var(--text-p)]")}>
+                          {t.amount > 0 ? "+" : "−"}{money2(Math.abs(t.amount))}
                         </p>
                         <p className="text-[8px] text-[var(--text-s)] uppercase">PKR</p>
                       </div>
                     </motion.div>
                   ))}
                </div>
-               <button className="p-4 text-[9px] text-[var(--text-s)] text-center uppercase tracking-widest hover:text-[var(--text-p)] transition-colors bg-[var(--border)]">{labels.viewHistory}</button>
+               {transactions.length > LEDGER_PREVIEW && (
+                 <button
+                   onClick={() => setShowAllHistory(v => !v)}
+                   aria-expanded={showAllHistory}
+                   className="p-4 text-[9px] text-[var(--text-s)] text-center uppercase tracking-widest hover:text-[var(--text-p)] transition-colors bg-[var(--border)]"
+                 >
+                   {showAllHistory ? labels.market.showLess : fill(labels.market.showAll, { n: transactions.length })}
+                 </button>
+               )}
             </div>
 
             {/* Micro-promos */}
@@ -913,19 +997,29 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setActiveModal(null)}
-              className="absolute inset-0 bg-black/90 backdrop-blur-xl"
+              className="absolute inset-0 bg-black/80"
             />
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 30 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 30 }}
-              className="relative w-full max-w-md bg-[var(--card)] border border-[var(--border)] rounded-[40px] p-10 shadow-[0_30px_100px_rgba(0,0,0,0.5)] overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-title"
+              className={cn(
+                "relative w-full bg-[var(--card)] border border-[var(--border)] shadow-[0_30px_100px_rgba(0,0,0,0.5)] overflow-hidden",
+                activeModal === "food" || activeModal === "travel"
+                  ? "max-w-5xl rounded-[28px] p-5 sm:p-8 h-[min(800px,92vh)] flex flex-col"
+                  : activeModal === "cart"
+                    ? "max-w-lg rounded-[28px] p-6 sm:p-8 max-h-[92vh] overflow-y-auto"
+                    : "max-w-md rounded-[40px] p-8 sm:p-10 max-h-[92vh] overflow-y-auto"
+              )}
             >
-              <div className="absolute top-0 left-0 w-full h-1.5 bg-[var(--accent)] shadow-[0_0_20px_var(--accent-glow)]" />
+              <div className="absolute top-0 left-0 w-full h-1 bg-[var(--accent)]" />
               
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-xl font-light tracking-tight text-[var(--text-p)]">
-                  {activeModal === "cart" as any && "Portfolio"}
+              <div className={cn("flex justify-between items-center flex-none", activeModal === "food" || activeModal === "travel" ? "mb-5" : "mb-8")}>
+                <h2 id="modal-title" className="text-xl font-light tracking-tight text-[var(--text-p)]">
+                  {activeModal === "cart" && labels.portfolio}
                   {activeModal === "feedback_main" as any && "Feedback"}
                   {activeModal === "transfer" && labels.transfer}
                   {activeModal === "bill" && labels.utilities}
@@ -934,68 +1028,60 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                   {activeModal === "food" && labels.food}
                   {activeModal === "vault" && labels.secureVault}
                   {activeModal === "loan" && labels.readyCash}
-                  {activeModal === "qr" && labels.searchPlaceholder}
+                  {activeModal === "qr" && labels.market.qrTitle}
                   {activeModal === "add_tx" && labels.addMoney}
                   {activeModal === "privacy" && labels.privacyPolicy}
                   {activeModal === "help" && labels.helpCenter}
-                  {activeModal === "flight_confirm" && labels.confirmBooking}
+                  {activeModal === "savings" && labels.market.savingsTitle}
                 </h2>
-                <button onClick={() => setActiveModal(null)} className="p-2 border border-[var(--border)] rounded-full hover:bg-[var(--border)] transition-colors">
+                <button onClick={() => setActiveModal(null)} aria-label={labels.market.close} className="p-2 border border-[var(--border)] rounded-full hover:bg-[var(--border)] transition-colors">
                   <X className="w-5 h-5 text-[var(--text-s)]" />
                 </button>
               </div>
 
               {/* Dynamic Modal Forms */}
-              <div className="space-y-6">
-                  {activeModal === "cart" as any && (
+              <div className={cn(activeModal === "food" || activeModal === "travel" ? "flex-1 min-h-0" : "space-y-6")}>
+                  {activeModal === "cart" && (
                     <div className="space-y-6">
-                      <div className="max-h-[400px] overflow-y-auto space-y-4 pr-2 scrollbar-hide">
-                        {cart.length === 0 ? (
-                          <div className="text-center py-12 opacity-40">
-                            <ShoppingCart className="w-12 h-12 mx-auto mb-4" />
-                            <p className="text-xs uppercase tracking-widest">Portfolio is empty</p>
-                          </div>
-                        ) : cart.map((item) => (
-                          <div key={item.cartId} className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-2xl flex items-center gap-4 group">
-                            <div className="w-10 h-10 bg-[var(--accent)]/10 rounded-xl flex items-center justify-center">
-                              {item.type === 'Hotel' ? <Bed className="w-5 h-5 text-[var(--accent)]" /> : <Plane className="w-5 h-5 text-[var(--accent)]" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-xs font-medium text-[var(--text-p)] truncate">{item.name || item.route}</h4>
-                              <p className="text-[10px] text-[var(--text-s)]">{formatCurrency(item.price)}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center bg-[var(--bg)] rounded-lg border border-[var(--border)]">
-                                <button 
-                                  onClick={() => updateCartQuantity(item.cartId, (item.quantity || 1) - 1)}
-                                  className="p-1.5 hover:text-[var(--accent)] transition-colors"
-                                >
-                                  <Minus className="w-3 h-3" />
-                                </button>
-                                <span className="text-[10px] w-6 text-center font-bold">{item.quantity || 1}</span>
-                                <button 
-                                  onClick={() => updateCartQuantity(item.cartId, (item.quantity || 1) + 1)}
-                                  className="p-1.5 hover:text-[var(--accent)] transition-colors"
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </button>
+                      {cart.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-[var(--control)] px-4 py-3 text-sm text-[var(--text-s)]">{labels.market.portfolioEmpty}</p>
+                      ) : (
+                        <ul>
+                          {cart.map(item => (
+                            <li key={item.cartId} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-[var(--border)] py-4 last:border-b-0">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-[var(--text-p)]">{item.name}</p>
+                                <p className="tabular mt-0.5 text-[13px] text-[var(--text-s)]">
+                                  {item.checkIn ? `${fill(labels.market.checkInOn, { date: formatDay(item.checkIn, lang) })} · ` : ""}
+                                  {fill(labels.market.rateTimes, { rate: formatPkr(item.price), n: item.quantity })}
+                                </p>
                               </div>
-                              <button onClick={() => removeFromCart(item.cartId)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-all">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                              <p className="tabular text-end text-sm font-medium text-[var(--text-p)]">{formatPkr(item.price * item.quantity)}</p>
+                              <div className="flex items-center gap-3">
+                                <Stepper
+                                  size="sm"
+                                  value={item.quantity}
+                                  min={1}
+                                  max={item.unit === "night" ? 14 : 6}
+                                  onChange={q => updateCartQuantity(item.cartId, q)}
+                                  label={item.unit === "night" ? labels.market.nights : labels.market.passengers}
+                                />
+                                <span className="text-[13px] text-[var(--text-s)]">{countLabel(labels.market, item.quantity, item.unit)}</span>
+                              </div>
+                              <button onClick={() => removeFromCart(item.cartId)} className="justify-self-end text-[13px] text-[var(--text-s)] hover:text-[var(--negative)]">{labels.market.remove}</button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {cart.length > 0 && (
-                        <div className="space-y-4 pt-4 border-t border-[var(--border)]">
-                           <div className="flex justify-between items-center text-xs">
-                             <span className="text-[var(--text-s)] uppercase tracking-widest font-bold">Total Portfolio Value</span>
-                             <span className="text-[var(--text-p)] font-bold">{formatCurrency(cart.reduce((s, i) => s + (i.price * (i.quantity || 1)), 0))}</span>
-                           </div>
-                           <button onClick={checkoutCart} disabled={isProcessing} className="w-full py-4 bg-[var(--accent)] text-[var(--bg)] text-[10px] font-bold uppercase tracking-[0.4em] rounded-2xl shadow-[0_10px_30px_var(--accent-glow)]">
-                             Initialize Settlement
-                           </button>
+                        <div className="space-y-4 border-t border-[var(--border)] pt-4">
+                          <div className="tabular flex items-baseline justify-between">
+                            <span className="text-sm text-[var(--text-s)]">{labels.market.total}</span>
+                            <span className="text-lg font-semibold text-[var(--text-p)]">{formatPkr(cart.reduce((s, i) => s + i.price * i.quantity, 0))}</span>
+                          </div>
+                          <button onClick={checkoutCart} disabled={isProcessing} className="h-11 w-full rounded-full bg-[var(--accent)] text-sm font-semibold text-[var(--bg)] transition-opacity hover:opacity-90 disabled:opacity-50">
+                            {labels.market.settle}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1046,12 +1132,13 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                                  <div className="flex gap-0.5">
                                    {[...Array(f.rating)].map((_, i) => <Star key={i} className="w-2.5 h-2.5 fill-yellow-400 text-yellow-400" />)}
                                  </div>
-                                 <button 
+                                 {f.userId === user.id && <button
                                    onClick={() => startEditingFeedback(f)}
+                                   aria-label="Edit your review"
                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-[var(--text-s)] hover:text-[var(--accent)]"
                                  >
                                     <ArrowRightLeft className="w-3 h-3" />
-                                 </button>
+                                 </button>}
                                </div>
                              </div>
                              <p className="text-[10px] text-[var(--text-p)] leading-relaxed italic">"{f.content}"</p>
@@ -1060,71 +1147,6 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                        </div>
                     </div>
                   )}
-
-                {activeModal === "flight_confirm" && pendingFlight && (
-                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="bg-[var(--accent)]/5 border border-[var(--accent)]/10 rounded-3xl p-6 relative overflow-hidden group">
-                      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Plane className="w-20 h-20 -rotate-12 text-[var(--accent)]" />
-                      </div>
-                      
-                      <div className="relative space-y-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-[var(--accent)]/10 flex items-center justify-center border border-[var(--accent)]/20">
-                            <Navigation className="w-5 h-5 text-[var(--accent)]" />
-                          </div>
-                          <div>
-                            <p className="text-[9px] text-[var(--text-s)] uppercase tracking-widest">{labels.bookingSummary}</p>
-                            <h3 className="text-lg font-medium text-[var(--text-p)]">{pendingFlight.route}</h3>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 py-4 border-y border-[var(--border)]">
-                          <div>
-                            <p className="text-[9px] text-[var(--text-s)] uppercase tracking-widest mb-1">{labels.travel}</p>
-                            <p className="text-xs text-[var(--text-p)] font-medium">{pendingFlight.airline}</p>
-                          </div>
-                          <div>
-                            <p className="text-[9px] text-[var(--text-s)] uppercase tracking-widest mb-1">{labels.tickets}</p>
-                            <p className="text-xs text-[var(--text-p)] font-medium">{pendingFlight.class}</p>
-                          </div>
-                          <div>
-                            <p className="text-[9px] text-[var(--text-s)] uppercase tracking-widest mb-1">{labels.overview}</p>
-                            <p className="text-xs text-[var(--text-p)] font-medium">{pendingFlight.date}</p>
-                          </div>
-                          <div>
-                             <p className="text-[9px] text-[var(--text-s)] uppercase tracking-widest mb-1">{labels.totalCost}</p>
-                             <p className="text-lg font-bold text-[var(--accent)]">{formatCurrency(pendingFlight.price)}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-4">
-                      <button 
-                        onClick={() => setActiveModal("travel")}
-                        className="flex-1 py-4 bg-[var(--card)] border border-[var(--border)] text-[var(--text-s)] text-[10px] font-bold uppercase tracking-[0.2em] rounded-2xl hover:bg-[var(--border)] transition-all"
-                      >
-                        {labels.cancel}
-                      </button>
-                      <button 
-                        disabled={isProcessing}
-                        onClick={() => handleAction("/api/bookings/flight", { 
-                          flightDetails: pendingFlight.route, 
-                          amount: pendingFlight.price 
-                        })}
-                        className="flex-[2] py-4 bg-[var(--accent)] text-[var(--bg)] text-[10px] font-bold uppercase tracking-[0.2em] rounded-2xl shadow-[0_10px_30px_var(--accent-glow)] hover:shadow-[0_15px_40px_var(--accent-glow)] transition-all flex items-center justify-center gap-2"
-                      >
-                        {isProcessing ? "..." : (
-                          <>
-                            <CreditCard className="w-4 h-4" />
-                            {labels.confirmAndPay}
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                )}
 
                 {activeModal === "privacy" && (
                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
@@ -1247,163 +1269,52 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                     </p>
                   </div>
                 )}
-                {activeModal === "travel" && (
+                {activeModal === "travel" && marketplace && (
+                  <TravelScreen
+                    hotels={marketplace.hotels}
+                    flights={marketplace.flights}
+                    packages={marketplace.packages}
+                    tab={travelTab}
+                    setTab={setTravelTab}
+                    t={labels.market}
+                    lang={lang}
+                    isProcessing={isProcessing}
+                    onBookHotel={bookHotel}
+                    onBookFlight={bookFlight}
+                    onBookDeal={bookDeal}
+                    onAddHotel={(hotel, checkIn, nights) => addToCart({ type: "Hotel", itemId: hotel.id, checkIn, quantity: nights })}
+                    onAddFlight={(flight, passengers) => addToCart({ type: "Flight", itemId: flight.id, quantity: passengers })}
+                  />
+                )}
+
+                {activeModal === "food" && marketplace && (
+                  <FoodScreen
+                    restaurants={marketplace.restaurants}
+                    basket={basket}
+                    setBasket={setBasket}
+                    t={labels.market}
+                    confirm={(message, onConfirm) => askToConfirm(message, onConfirm)}
+                    onPlaceOrder={placeFoodOrder}
+                    isProcessing={isProcessing}
+                  />
+                )}
+
+                {activeModal === "savings" && (
                   <div className="space-y-6">
-                    <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide border-b border-[var(--border)]">
-                      {(["Hotels", "Flights", "Packages"] as TravelTab[]).map(n => (
-                        <button 
-                          key={n} 
-                          onClick={() => setTravelTab(n)}
-                          className={cn(
-                            "px-4 py-2 rounded-full text-[9px] uppercase tracking-widest border transition-all whitespace-nowrap", 
-                            travelTab === n ? "bg-[var(--accent)] text-[var(--bg)] border-[var(--accent)]" : "bg-[var(--card)] text-[var(--text-s)] border-[var(--border)]"
-                          )}
-                        >
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                    
-                    <div className="space-y-4 max-h-[440px] overflow-y-auto pr-2 scrollbar-hide">
-                      {travelTab === "Hotels" && marketplace?.hotels.map(hotel => (
-                        <div key={hotel.id} className="bg-[var(--card)] rounded-[24px] border border-[var(--border)] overflow-hidden group">
-                          <img src={hotel.image} alt={hotel.name} className="w-full h-32 object-cover group-hover:scale-105 transition-transform" referrerPolicy="no-referrer" />
-                          <div className="p-5">
-                            <div className="flex justify-between items-start mb-2">
-                              <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="px-1.5 py-0.5 bg-[var(--accent)]/10 rounded text-[7px] text-[var(--accent)] font-bold">{hotel.country}</span>
-                                  <h4 className="text-sm font-medium text-[var(--text-p)]">{hotel.name}</h4>
-                                </div>
-                                <p className="text-[10px] text-[var(--text-s)] flex items-center gap-1"><Navigation className="w-2.5 h-2.5" /> {hotel.location}</p>
-                              </div>
-                              <div className="flex items-center gap-1 text-[var(--accent)] text-xs"><Star className="w-3 h-3 fill-current" /> {hotel.rating}</div>
-                            </div>
-                            <div className="flex justify-between items-center mt-4 pt-4 border-t border-[var(--border)]">
-                              <div>
-                                <p className="text-[9px] text-[var(--text-s)] uppercase tracking-widest">Starting from</p>
-                                <p className="text-sm font-bold text-[var(--text-p)]">{formatCurrency(hotel.price)}</p>
-                              </div>
-                              <div className="flex gap-2">
-                                <button 
-                                  onClick={() => addToCart({ ...hotel, type: 'Hotel' })}
-                                  className="px-3 py-2 bg-[var(--card)] border border-[var(--border)] text-[var(--text-s)] rounded-xl hover:text-[var(--accent)]"
-                                >
-                                  <ShoppingCart className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  onClick={() => handleAction("/api/bookings/hotel", { hotelName: hotel.name, amount: hotel.price })}
-                                  className="px-5 py-2 bg-[var(--accent)] text-[var(--bg)] text-[9px] font-bold uppercase tracking-widest rounded-xl hover:opacity-90 active:scale-95 transition-all"
-                                >
-                                  Reserve
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {travelTab === "Flights" && marketplace?.flights.map(flight => (
-                        <div key={flight.id} className="bg-[var(--card)] rounded-[24px] border border-[var(--border)] p-6 flex flex-col gap-4">
-                          <div className="flex justify-between items-start">
-                            <div>
-                                <p className="text-[9px] text-[var(--accent)] uppercase tracking-[0.2em] mb-1">{flight.airline}</p>
-                                <h4 className="text-base font-medium text-[var(--text-p)]">{flight.route}</h4>
-                                <p className="text-[10px] text-[var(--text-s)] mt-1">{flight.date} • {flight.class}</p>
-                            </div>
-                            <Plane className="w-5 h-5 text-[var(--text-s)] opacity-30" />
-                          </div>
-                          <div className="flex justify-between items-center pt-4 border-t border-[var(--border)]">
-                            <p className="text-lg font-bold text-[var(--text-p)]">{formatCurrency(flight.price)}</p>
-                            <div className="flex gap-2">
-                                <button 
-                                  onClick={() => addToCart({ ...flight, type: 'Flight' })}
-                                  className="px-4 py-2 bg-[var(--card)] border border-[var(--border)] text-[var(--text-s)] rounded-xl hover:text-[var(--accent)]"
-                                >
-                                  <ShoppingCart className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    setPendingFlight(flight);
-                                    setActiveModal("flight_confirm");
-                                  }}
-                                  className="px-6 py-2.5 bg-[var(--card)] border border-[var(--accent)]/30 text-[var(--accent)] text-[9px] font-bold uppercase tracking-widest rounded-xl hover:bg-[var(--accent)] hover:text-[var(--bg)] transition-all"
-                                >
-                                  {labels.confirmAndPay}
-                                </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {travelTab === "Packages" && marketplace?.packages.map(pkg => (
-                        <div key={pkg.id} className="bg-[var(--card)] rounded-[24px] border border-[var(--border)] overflow-hidden">
-                          <img src={pkg.image} alt={pkg.name} className="w-full h-28 object-cover" referrerPolicy="no-referrer" />
-                          <div className="p-5">
-                            <h4 className="text-sm font-medium mb-1 text-[var(--text-p)]">{pkg.name}</h4>
-                            <p className="text-[10px] text-[var(--text-s)] mb-4">{pkg.description}</p>
-                            <div className="flex justify-between items-center pt-4 border-t border-[var(--border)]">
-                              <p className="text-lg font-bold text-[var(--text-p)]">{formatCurrency(pkg.price)}</p>
-                              <button 
-                                onClick={() => handleAction("/api/bookings/hotel", { hotelName: pkg.name, amount: pkg.price })}
-                                className="px-5 py-2 bg-[var(--accent)] text-[var(--bg)] text-[9px] font-bold uppercase tracking-widest rounded-xl"
-                              >
-                                View Package
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                    <p className="text-sm text-[var(--text-p)]">
+                      {fill(labels.market.savingsRate, { rate: `${(summary.savingsRate * 100).toFixed(1)}%` })}
+                    </p>
+                    <dl className="tabular space-y-3 text-sm">
+                      <div className="flex justify-between"><dt className="text-[var(--text-s)]">{labels.market.income}</dt><dd className="text-[var(--text-p)]">{formatPkr(summary.monthlyIncome)}</dd></div>
+                      <div className="flex justify-between"><dt className="text-[var(--text-s)]">{labels.market.expenses}</dt><dd className="text-[var(--text-p)]">−{formatPkr(summary.monthlyExpenses)}</dd></div>
+                      <div className="flex justify-between border-t border-[var(--border)] pt-3 text-base font-semibold"><dt className="text-[var(--text-p)]">{labels.market.saved}</dt><dd className="text-[var(--text-p)]">{formatPkr(summary.monthlyIncome - summary.monthlyExpenses)}</dd></div>
+                    </dl>
+                    <div className="h-2 overflow-hidden rounded-full bg-[var(--border)]" role="img" aria-label={`${(summary.savingsRate * 100).toFixed(1)}%`}>
+                      <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${summary.savingsRate * 100}%` }} />
                     </div>
                   </div>
                 )}
 
-                {activeModal === "food" && (
-                  <div className="space-y-6">
-                    <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide border-b border-[var(--border)]">
-                      {["All", "Lahore", "Karachi", "Islamabad", "Multan", "Faisalabad"].map(city => (
-                        <button 
-                          key={city} 
-                          onClick={() => setFoodCity(city)}
-                          className={cn(
-                            "px-4 py-2 rounded-full text-[9px] uppercase tracking-widest border transition-all whitespace-nowrap", 
-                            foodCity === city ? "bg-[var(--accent)] text-[var(--bg)] border-[var(--accent)]" : "bg-[var(--card)] text-[var(--text-s)] border-[var(--border)]"
-                          )}
-                        >
-                          {city}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
-                      {marketplace?.restaurants.filter(r => foodCity === "All" || r.location === foodCity).map(rest => (
-                        <div key={rest.id} className="bg-[var(--card)] rounded-[24px] border border-[var(--border)] p-4 flex gap-4 hover:border-[var(--accent)]/30 transition-all group">
-                          <div className="w-20 h-20 rounded-2xl overflow-hidden border border-[var(--border)]">
-                            <img src={rest.image} alt={rest.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform" referrerPolicy="no-referrer" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h4 className="text-sm font-medium text-[var(--text-p)]">{rest.name}</h4>
-                                <p className="text-[10px] text-[var(--text-s)]">{rest.category} • {rest.location}</p>
-                              </div>
-                              <div className="flex items-center gap-1 text-[var(--accent)] text-xs"><Star className="w-3 h-3 fill-current" /> {rest.rating}</div>
-                            </div>
-                            <div className="flex items-center gap-4 mt-3 text-[9px] text-[var(--text-s)] uppercase tracking-widest">
-                              <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {rest.deliveryTime}</span>
-                              <span className="flex items-center gap-1"><Utensils className="w-3 h-3" /> Min. {rest.minOrder}</span>
-                            </div>
-                            <button 
-                              onClick={() => handleAction("/api/food/order", { restaurantName: rest.name, amount: Math.max(1500, rest.minOrder) })}
-                              className="w-full mt-4 py-2 bg-[var(--card)] text-[var(--accent)] border border-[var(--accent)]/20 text-[9px] font-bold uppercase tracking-widest rounded-xl hover:bg-[var(--accent)] hover:text-[var(--bg)] transition-all"
-                            >
-                              Order Now
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 {activeModal === "transfer" && (
                   <>
                     <InputGroup label="Recipient Account / Number" type="text" placeholder="e.g. 03450000000" {...bindField("recipient")} />
@@ -1501,7 +1412,7 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                animate={{ opacity: 1 }}
                exit={{ opacity: 0 }}
                onClick={() => setConfirmData(null)}
-               className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+               className="absolute inset-0 bg-black/80"
              />
              <motion.div 
                 initial={{ scale: 0.9, opacity: 0 }}
@@ -1509,17 +1420,19 @@ export const Dashboard = ({ onLogout, lang, setLang, theme, setTheme, user }: { 
                 exit={{ scale: 0.9, opacity: 0 }}
                 className="relative bg-[var(--card)] border border-[var(--border)] rounded-[32px] p-8 max-w-sm w-full text-center space-y-6 shadow-2xl"
              >
-                <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto border border-red-500/20">
-                  <Trash className="w-8 h-8 text-red-500" />
-                </div>
-                <h3 className="text-sm font-medium text-[var(--text-p)]">{confirmData.message}</h3>
+                {confirmData.danger && (
+                  <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto border border-red-500/20">
+                    <Trash className="w-8 h-8 text-red-500" />
+                  </div>
+                )}
+                <h3 className="text-sm font-medium leading-6 text-[var(--text-p)]">{confirmData.message}</h3>
                 <div className="flex gap-3">
-                  <button onClick={() => setConfirmData(null)} className="flex-1 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[10px] uppercase tracking-widest font-bold">Cancel</button>
+                  <button onClick={() => setConfirmData(null)} className="flex-1 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm font-medium text-[var(--text-p)]">{labels.cancel}</button>
                   <button 
                     onClick={() => { confirmData.onConfirm(); setConfirmData(null); }} 
-                    className="flex-1 py-3 bg-red-500 text-white rounded-xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-red-500/20"
+                    className={cn("flex-1 py-3 rounded-xl text-sm font-semibold", confirmData.danger ? "bg-red-500 text-white" : "bg-[var(--accent)] text-[var(--bg)]")}
                   >
-                    Confirm
+                    {confirmData.confirmLabel || "Confirm"}
                   </button>
                 </div>
              </motion.div>
@@ -1546,7 +1459,7 @@ const QuickAction = ({ icon, label, onClick, delay }: { icon: React.ReactNode; l
 );
 
 const CategoryIcon = ({ category, amount }: { category: string; amount: number }) => {
-  if (amount > 0) return <ArrowUpRight className="w-5 h-5 text-[#00ffaa]" />;
+  if (amount > 0) return <ArrowUpRight className="w-5 h-5 text-[var(--positive)]" />;
   if (category.toLowerCase().includes("bill")) return <Receipt className="w-5 h-5 text-red-400" />;
   if (category.toLowerCase().includes("transfer")) return <ArrowRightLeft className="w-5 h-5 text-[var(--accent)]" />;
   if (category.toLowerCase().includes("load")) return <Smartphone className="w-5 h-5 text-orange-400" />;

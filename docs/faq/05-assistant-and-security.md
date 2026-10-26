@@ -86,6 +86,10 @@ Use a reputable password manager that encrypts your data with a master password 
 
 In the current demonstration version there is no personal information to protect: there is no registration, and the only account is the shared demonstration account. Every request is protected by a signed session token that expires after 24 hours. The app's assistants run on the server and do not send your questions or transactions to external AI services. The Privacy Policy, available from the footer, summarises the app's approach to protecting data.
 
+## Can someone change the price of an order or a booking?
+
+No. When you order food or book travel, the app sends only what you chose: the dishes and quantities, the hotel, check-in date and nights, or the flight and passengers. The server looks up every price in its own menu and rate data, checks the quantities, the dates and the restaurant's minimum order, and works out the amount itself. Amounts you type, such as a bill or a transfer, must be above zero, and Quick Loan always disburses its fixed limit.
+
 ## Is my data shared with anyone?
 
 No. WaqfApp does not share data with advertisers or other third parties. In the demonstration version, data exists only in the server's memory and disappears when the server restarts. The only external download the server makes is the one-time download of the assistant's embedding model from Hugging Face, and your questions are not part of that download.
