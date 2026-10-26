@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "faq:pdf": "python scripts/build_faq_pdf.py"
+    "faq:pdf": "python scripts/build_faq_pdf.py",
+    "policies:import": "tsx scripts/import-breachmirror-policies.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",

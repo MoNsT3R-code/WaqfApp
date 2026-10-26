@@ -8,6 +8,10 @@ import session from "express-session";
 import cookieParser from "cookie-parser";
 import { createAgents, type ChatTurn } from "./server/agent/index.ts";
 import { lahoreMarketplace, LIMITS, findMenuItem } from "./shared/marketplace.ts";
+import { createPlanService, PlanError } from "./server/plan/service.ts";
+import { audit, auditFor, verifyAudit } from "./server/security/audit.ts";
+import { checkPin, remember, replay } from "./server/security/pin.ts";
+import { BREACHMIRROR_URL, breachMirrorStatus, isSecurityQuestion } from "./server/integrations/breachmirror.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -123,6 +127,7 @@ async function startServer() {
       date: new Date().toISOString()
     };
     transactions.unshift(transaction);
+    audit(userId, amount < 0 ? "payment" : "money_in", { merchant, amount, category });
     return transaction;
   };
 
@@ -254,7 +259,7 @@ async function startServer() {
   });
 
   // Settle every item in the portfolio and empty it
-  app.post("/api/cart/checkout", authenticateToken, (req: any, res) => {
+  app.post("/api/cart/checkout", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const items = cartOf(req.user.userId);
     if (items.length === 0) return res.status(400).json({ message: "Portfolio is empty" });
@@ -269,11 +274,11 @@ async function startServer() {
       )
     );
     carts[req.user.userId] = [];
-    res.json({ message: "Portfolio settled", transactions: newTransactions });
+    res.json({ message: "Portfolio settled", transactions: newTransactions, budget: await plans.afterSpend(req.user.userId) });
   });
 
   // Hotel booking: rate × nights
-  app.post("/api/bookings/hotel", authenticateToken, (req: any, res) => {
+  app.post("/api/bookings/hotel", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const hotel = marketplace.hotels.find(h => h.id === req.body.hotelId);
     const checkIn = parseCheckIn(req.body.checkIn);
@@ -282,11 +287,11 @@ async function startServer() {
       return res.status(400).json({ message: `Choose a hotel, a check-in date from today and 1 to ${LIMITS.nights} nights` });
     }
     const transaction = addTransaction(req.user.userId, -(hotel.pricePerNight * nights), `Stay at ${hotel.name}, ${plural(nights, "night")} from ${checkIn}`, "Travel");
-    res.json({ message: "Booking confirmed", transaction });
+    res.json({ message: "Booking confirmed", transaction, budget: await plans.afterSpend(req.user.userId) });
   });
 
   // Flight booking: fare × passengers
-  app.post("/api/bookings/flight", authenticateToken, (req: any, res) => {
+  app.post("/api/bookings/flight", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const flight = marketplace.flights.find(f => f.id === req.body.flightId);
     const passengers = parseCount(req.body.passengers, LIMITS.passengers);
@@ -297,20 +302,20 @@ async function startServer() {
       `Flight ${flight.from.code} to ${flight.to.code}, ${flight.airline}, ${plural(passengers, "passenger")}`,
       "Travel"
     );
-    res.json({ message: "Flight booked", transaction });
+    res.json({ message: "Flight booked", transaction, budget: await plans.afterSpend(req.user.userId) });
   });
 
   // Trip deal booking
-  app.post("/api/bookings/package", authenticateToken, (req: any, res) => {
+  app.post("/api/bookings/package", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const deal = marketplace.packages.find(p => p.id === req.body.packageId);
     if (!deal) return res.status(400).json({ message: "Trip deal not found" });
     const transaction = addTransaction(req.user.userId, -deal.price, `Trip deal: ${deal.name}`, "Travel");
-    res.json({ message: "Trip deal booked", transaction });
+    res.json({ message: "Trip deal booked", transaction, budget: await plans.afterSpend(req.user.userId) });
   });
 
   // Food order: dishes priced from the menu, minimum order checked, delivery fee added
-  app.post("/api/food/order", authenticateToken, (req: any, res) => {
+  app.post("/api/food/order", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const restaurant = marketplace.restaurants.find(r => r.id === req.body.restaurantId);
     if (!restaurant) return res.status(400).json({ message: "Restaurant not found" });
@@ -331,7 +336,7 @@ async function startServer() {
     const total = subtotal + restaurant.deliveryFee;
     const count = lines.reduce((sum, l) => sum + l.quantity, 0);
     const transaction = addTransaction(req.user.userId, -total, `Order from ${restaurant.name} (${plural(count, "item")})`, "Food");
-    res.json({ message: "Order placed", transaction, subtotal, deliveryFee: restaurant.deliveryFee, total });
+    res.json({ message: "Order placed", transaction, subtotal, deliveryFee: restaurant.deliveryFee, total, budget: await plans.afterSpend(req.user.userId) });
   });
 
   // User Profile (never the password hash)
@@ -387,54 +392,76 @@ async function startServer() {
   const LEDGER_CATEGORIES = ["General", "Shopping", "Food", "Bills", "Income"];
 
   // Simulation: Add Transaction (Income adds to the balance; other categories are spending)
-  app.post("/api/transactions/add", authenticateToken, (req: any, res) => {
+  app.post("/api/transactions/add", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const merchant = parseText(req.body.merchant);
     const category = LEDGER_CATEGORIES.includes(req.body.category) ? req.body.category : null;
     const amount = parseAmount(Math.abs(Number(req.body.amount)));
     if (!merchant || !category || !amount) return res.status(400).json({ message: "Enter a description, a category and an amount above zero" });
     const transaction = addTransaction(req.user.userId, category === "Income" ? amount : -amount, merchant, category);
-    res.json({ message: "Transaction added successfully", transaction });
+    res.json({ message: "Transaction added successfully", transaction, budget: category === "Income" ? null : await plans.afterSpend(req.user.userId) });
   });
 
-  // Simulation: Send Money
-  app.post("/api/transactions/transfer", authenticateToken, (req: any, res) => {
+  /**
+   * Money that leaves the budget or adds debt needs the PIN. Replays of the same
+   * request number return the first answer, so a double tap never acts twice.
+   * Returns true when the handler may go ahead.
+   */
+  const pinGate = (req: any, res: any, action: string) => {
+    const prior = replay(req.user.userId, req.body.requestId);
+    if (prior) { res.status(prior.status).json(prior.body); return false; }
+    const pin = checkPin(req.user.userId, req.body.pin, action);
+    if (pin.ok === false) {
+      res.status(403).json({ message: pin.message, pinError: pin.reason, triesLeft: pin.triesLeft });
+      return false;
+    }
+    return true;
+  };
+  const answer = (req: any, res: any, status: number, body: unknown) => {
+    remember(req.user.userId, req.body.requestId, status, body);
+    res.status(status).json(body);
+  };
+
+  // Simulation: Send Money (PIN)
+  app.post("/api/transactions/transfer", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const to = parseText(req.body.to);
     const amount = parseAmount(req.body.amount);
     if (!to || !amount) return res.status(400).json({ message: "Enter a recipient and an amount above zero" });
+    if (!pinGate(req, res, "transfer")) return;
     const transaction = addTransaction(req.user.userId, -amount, `Transfer to ${to}`, "Transfer");
-    res.json({ message: "Transfer successful", transaction });
+    answer(req, res, 200, { message: "Transfer successful", transaction, budget: await plans.afterSpend(req.user.userId) });
   });
 
   // Simulation: Utility Bill Payment
-  app.post("/api/bills/pay", authenticateToken, (req: any, res) => {
+  app.post("/api/bills/pay", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const provider = parseText(req.body.provider, 40);
     const consumerId = parseText(req.body.consumerId, 40);
     const amount = parseAmount(req.body.amount);
     if (!provider || !consumerId || !amount) return res.status(400).json({ message: "Enter a provider, a consumer number and an amount above zero" });
     const transaction = addTransaction(req.user.userId, -amount, `${provider} Bill - ${consumerId}`, "Bills");
-    res.json({ message: "Bill paid successfully", transaction });
+    res.json({ message: "Bill paid successfully", transaction, budget: await plans.afterSpend(req.user.userId) });
   });
 
   // Simulation: ReadyCash Loan (the pre-approved limit is set here, not by the request)
   const READY_CASH_LIMIT = 15000;
   app.post("/api/loans/readycash", authenticateToken, (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
+    if (!pinGate(req, res, "quick_loan")) return;
     const transaction = addTransaction(req.user.userId, READY_CASH_LIMIT, "ReadyCash Credit Line", "Loan");
-    res.json({ message: "Credit limit disbursed", transaction });
+    answer(req, res, 200, { message: "Credit limit disbursed", transaction });
   });
 
   // Simulation: Mobile Load
-  app.post("/api/mobile/load", authenticateToken, (req: any, res) => {
+  app.post("/api/mobile/load", authenticateToken, async (req: any, res) => {
     if (req.user.role === "admin") return res.status(403).json({ message: "Admin is read-only" });
     const operator = parseText(req.body.operator, 20);
     const mobileNumber = parseText(req.body.mobileNumber, 20);
     const amount = parseAmount(req.body.amount);
     if (!operator || !mobileNumber || !amount) return res.status(400).json({ message: "Enter an operator, a mobile number and an amount above zero" });
     const transaction = addTransaction(req.user.userId, -amount, `${operator} Load - ${mobileNumber}`, "Mobile Load");
-    res.json({ message: "Top-up successful", transaction });
+    res.json({ message: "Top-up successful", transaction, budget: await plans.afterSpend(req.user.userId) });
   });
 
   // Admin Only: All Emails / Accounts
@@ -443,8 +470,80 @@ async function startServer() {
     res.json(users.map(u => ({ email: u.email, username: u.username, role: u.role, id: u.id })));
   });
 
-  // --- RAG Agents (LangChain + LangGraph over docs/faq, no API key) ---
+  // --- RAG Agents (LangChain + LangGraph over docs/faq and docs/policies, no API key) ---
   const agents = createAgents(__dirname);
+
+  // --- Smart Spend & Save (the monthly split, budget warnings, the limit decision) ---
+  const plans = createPlanService({ kb: agents.kb, transactionsOf: userId => transactions.filter(t => t.userId === userId) });
+
+  const planError = (res: any, e: any) => {
+    if (e instanceof PlanError) return res.status(400).json({ message: e.message });
+    console.error("[Plan]", e);
+    res.status(500).json({ message: "Smart Spend & Save is unavailable" });
+  };
+
+  // The plan, its figures, any waiting decision, and the latest salary as the suggested deposit
+  app.get("/api/plan", authenticateToken, (req: any, res) => {
+    const salary = transactions.find(t => t.userId === req.user.userId && t.category === "Income");
+    res.json({ ...plans.dashboard(req.user.userId), suggestedDeposit: salary?.amount ?? 100000 });
+  });
+
+  app.post("/api/plan/start", authenticateToken, (req: any, res) => {
+    try { res.json(plans.start(req.user.userId, req.body || {})); } catch (e) { planError(res, e); }
+  });
+
+  app.put("/api/plan/settings", authenticateToken, async (req: any, res) => {
+    try { res.json(await plans.settings(req.user.userId, req.body || {})); } catch (e) { planError(res, e); }
+  });
+
+  // The answer to the waiting step of the limit decision; confirming a move needs the PIN
+  app.post("/api/plan/respond", authenticateToken, async (req: any, res) => {
+    const value = typeof req.body?.value === "string" ? req.body.value.slice(0, 40) : "";
+    if (!value) return res.status(400).json({ message: "Choose an option." });
+    const prior = replay(req.user.userId, req.body.requestId);
+    if (prior) return res.status(prior.status).json(prior.body);
+    if (plans.waitingStep(req.user.userId) === "confirm" && value === "confirm") {
+      const pin = checkPin(req.user.userId, req.body.pin, "savings_move");
+      if (pin.ok === false) {
+        audit(req.user.userId, "transfer_denied", { reason: pin.reason });
+        return res.status(403).json({ message: pin.message, pinError: pin.reason, triesLeft: pin.triesLeft });
+      }
+    }
+    try { answer(req, res, 200, await plans.respond(req.user.userId, value)); } catch (e) { planError(res, e); }
+  });
+
+  // A move from savings outside the limit decision (Savings screen, instead of a Quick Loan)
+  app.post("/api/plan/move", authenticateToken, (req: any, res) => {
+    try {
+      plans.previewMove(req.user.userId, req.body?.amount);
+      if (!pinGate(req, res, "savings_move")) return;
+      answer(req, res, 200, plans.moveSavings(req.user.userId, req.body?.amount));
+    } catch (e) { planError(res, e); }
+  });
+
+  app.post("/api/plan/preview-move", authenticateToken, (req: any, res) => {
+    try { res.json(plans.previewMove(req.user.userId, req.body?.amount)); } catch (e) { planError(res, e); }
+  });
+
+  // "Thinking of buying something?"
+  app.post("/api/plan/check", authenticateToken, (req: any, res) => {
+    try { res.json(plans.check(req.user.userId, typeof req.body?.text === "string" ? req.body.text.slice(0, 80) : "")); } catch (e) { planError(res, e); }
+  });
+
+  // Budget impact of a payment before it is made (Send Money, Bills)
+  app.post("/api/plan/impact", authenticateToken, (req: any, res) => {
+    const amount = parseAmount(req.body?.amount);
+    res.json({ impact: amount ? plans.impact(req.user.userId, amount) : null });
+  });
+
+  // --- Security Center: the user's audit trail, its chain, and BreachMirror AI's status ---
+  app.get("/api/security/audit", authenticateToken, (req: any, res) => {
+    res.json({ entries: auditFor(req.user.userId, 60), chain: verifyAudit() });
+  });
+
+  app.get("/api/security/breachmirror", authenticateToken, async (req: any, res) => {
+    res.json(await breachMirrorStatus(PORT));
+  });
 
   app.get("/api/agent/status", (req, res) => {
     res.json(agents.status());
@@ -461,7 +560,14 @@ async function startServer() {
       .slice(-10)
       .map((t: any) => ({ role: t.role, content: t.content.slice(0, 2000) }));
     try {
-      res.json(await agents.chat(message.trim(), turns, typeof lang === "string" ? lang : "en"));
+      const result = await agents.chat(message.trim(), turns, typeof lang === "string" ? lang : "en");
+      let escalation = null;
+      if (result.generatedBy === "none" && isSecurityQuestion(message)) {
+        const status = await breachMirrorStatus(PORT);
+        if (status.connected) escalation = { url: BREACHMIRROR_URL, label: "Ask BreachMirror AI's Security Team" };
+      }
+      if (result.redacted) audit(req.user.userId, "assistant_redacted", {});
+      res.json({ ...result, escalation });
     } catch (e: any) {
       console.error("[Agent] Chat failed:", e);
       res.status(500).json({ message: "Assistant unavailable" });

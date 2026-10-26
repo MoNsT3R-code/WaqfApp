@@ -35,12 +35,21 @@
   --negative: #e5566f;
   --raised: #17171d;
   --control: rgba(255, 255, 255, 0.16);
+  /* Smart Spend & Save: the spending budget in amber, savings in green (after the prototype) */
+  --spend: #edae3a;
+  --spend-soft: #3a2d12;
+  --save: #38b492;
+  --save-soft: #113a2f;
 }
 [data-theme='light'] {
   --positive: #247b50;
   --negative: #c4242a;
   --raised: #f4f4f3;
   --control: rgba(0, 0, 0, 0.16);
+  --spend: #c98510;
+  --spend-soft: #fbeac4;
+  --save: #0e6b57;
+  --save-soft: #d2ebe3;
 }
 
 .tabular {

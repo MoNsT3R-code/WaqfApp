@@ -198,13 +198,15 @@ export class FaqKnowledgeBase {
   private ready: Promise<void>;
   private isReady = false;
 
-  constructor(private faqDir: string) {
+  /** One or more folders of Markdown: the FAQ, and the imported security policies */
+  constructor(private dirs: string | string[]) {
     this.ready = this.build();
   }
 
   private async build() {
     const started = Date.now();
-    this.documents = await loadFaqDocuments(this.faqDir);
+    const folders = Array.isArray(this.dirs) ? this.dirs : [this.dirs];
+    this.documents = (await Promise.all(folders.map(dir => loadFaqDocuments(dir).catch(() => [])))).flat();
     this.bm25 = new Bm25Index(this.documents);
     try {
       const store = new InMemoryFaqVectorStore(new LocalTransformersEmbeddings(), {});
